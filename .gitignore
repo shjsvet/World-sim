@@ -54,6 +54,14 @@ logs/
 .worldsim/
 worlds/
 
+# --- Временные файлы инструментов ---
+.tmp/
+pip-build-env-*/
+pip-build-tracker-*/
+pip-ephem-wheel-cache-*/
+pip-install-*/
+pip-unpack-*/
+
 # --- IDE и ОС ---
 .idea/
 .vscode/
