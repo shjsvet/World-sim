@@ -1,0 +1,68 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+ENV/
+pip-wheel-metadata/
+.Python
+*.pyd
+
+# --- Тесты, кеши, покрытие ---
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# --- Секреты и локальная конфигурация ---
+# Реальные ключи и токены хранятся только локально и никогда не коммитятся.
+.env
+.env.*
+!.env.example
+*.secret
+*.key
+*.pem
+*.p12
+*.pfx
+secrets/
+credentials*.json
+token*.json
+service_account*.json
+id_rsa*
+id_ed25519*
+
+# --- ИИ-провайдеры: кеш ответов и логи ---
+.cache/
+logs/
+*.log
+
+# --- Данные симуляции (локальные сохранения) ---
+.worldsim/
+worlds/
+
+# --- IDE и ОС ---
+.idea/
+.vscode/
+*.iml
+*.swp
+Thumbs.db
+Desktop.ini
+.DS_Store
+$RECYCLE.BIN/
+
+# --- Служебные отчёты диагностики прав DSH ---
+.acl-diagnostics/
