@@ -4,8 +4,8 @@
 промптов и журнал их изменений — в [docs/PROMPTS.md](docs/PROMPTS.md), требования — в
 [docs/TASK.md](docs/TASK.md).
 
-**Всего задач:** 46 (T00–T45) · ✅ выполнено: 5 · 🟨 в работе: 0 · ⬜ в бэклоге: 41
-**Текущая задача:** T05 — BST-дерево (`core/tree.py`)
+**Всего задач:** 46 (T00–T45) · ✅ выполнено: 6 · 🟨 в работе: 0 · ⬜ в бэклоге: 40
+**Текущая задача:** T06 — N-арное дерево (`core/ntree.py`)
 **Обновлено:** 2026-11-12
 
 ## Как ведётся список
@@ -26,8 +26,8 @@
 
 ## Следующий шаг
 
-- **T05 — BST-дерево** (зависит от T03): `BinarySearchTree`, мультимножество событий по годам.
-- Далее: T06–T11 (домен), T12–T15 (генератор, движок, UI), этапы 1–5 ТЗ.
+- **T06 — N-арное дерево** (зависит от T05): `Node[T]`, защита от циклов, обходы, сериализация.
+- Далее: T07 (RNG), T08 (карта), T09 (события), T10 (снимок мира), T11 (летопись), T12–T15 (генератор, движок, UI).
 - **T04 (CI)** отложена: удалённый репозиторий не подключён, локальная проверка идёт через `pytest`/`mypy`/`ruff`.
 
 ## Доска задач
@@ -39,7 +39,7 @@
 | T02 | Каркас Python-проекта (pyproject, src-layout, README, .env.example) | 0.1 | P0 | T01 | ✅ |
 | T03 | Тесты и качество кода (pytest, mypy, ruff, coverage) | 0.1 | P0 | T02 | ✅ |
 | T04 | CI на GitHub Actions | 0.1 | P2 | T03 | ⬜ |
-| T05 | BST-дерево (`core/tree.py`) | 0.2 | P0 | T03 | ⬜ |
+| T05 | BST-дерево (`core/tree.py`) | 0.2 | P0 | T03 | ✅ |
 | T06 | N-арное дерево (`core/ntree.py`) | 0.2 | P0 | T05 | ⬜ |
 | T07 | Детерминированный RNG (`core/rng.py`) | 0.2 | P0 | T03 | ⬜ |
 | T08 | Модели карты (`core/geography.py`) | 0.2 | P0 | T07 | ⬜ |
@@ -107,3 +107,4 @@
 | 2026-11-11 | T02 | `task(T02): каркас Python-проекта` | Созданы `pyproject.toml` (src-layout, extras `dev` и `ai`), пакет `worldsim` с подпакетами `core`/`generator`/`engine`/`vcs`/`ai`/`ui` и маркером `py.typed`, `README.md`, `.env.example`; `.gitignore` дополнен временными каталогами pip. Editable-установка проверена: `pip install -e . --no-deps --no-build-isolation` в venv, `worldsim.__version__ == 0.1.0`, все подпакеты импортируются, метаданные пакета в UTF-8. Установка с зависимостями в чистом venv не проверена из-за зависания pip в песочнице — закрывается задачей T04 |
 | 2026-11-12 | T39 | `task(T39): перевести проект из библиотеки в приложение` | Добавлены `src/worldsim/launcher.py`, `__main__.py` и стартовая страница `ui/app.py`; `pyproject.toml` регистрирует команду `worldsim` и больше не содержит `py.typed`; README переписан под запуск приложения; `TASK.md` и промпты обновлены (тип проекта — веб-приложение, DoD требует запуска). Проверено: `worldsim.exe` создан, entry point `worldsim.launcher:main`, `python -m worldsim` с подменённым Streamlit возвращает 0, аргументы и путь к `app.py` корректны. Запуск настоящего Streamlit не проверен: пакет не установлен, pip в песочнице зависает — закрывается задачей T04 |
 | 2026-11-12 | T03 | `task(T03): тесты и качество кода` | В `pyproject.toml` добавлены конфигурации: pytest (маркеры `slow`/`integration`/`ai`), mypy strict с override для `streamlit`/`plotly`, ruff (`E/F/I/B/UP/SIM/RUF`, ignore `RUF001`–`RUF003` из-за кириллицы в docstrings), coverage с ветвлением. Созданы `tests/conftest.py` (фикстуры `seed`/`rng`, хелпер `deterministic_rng`) и `tests/test_package.py` (версия, импорт всех подпакетов, сборка аргументов launcher, запуск `main` с подменённым Streamlit). Проверено: 10 тестов зелёные, mypy strict — 10 файлов без ошибок, `ruff check` и `ruff format --check` чистые, coverage 59 %; в README добавлен раздел «Проверка качества» |
+| 2026-11-12 | T05 | `task(T05): бинарное дерево поиска` | Реализован `BinarySearchTree` в `src/worldsim/core/tree.py`: мультимножество значений по ключу (`get`/`get_all`), `contains`, `min_key`/`max_key`, in-order `__iter__`/`items`, `range_query` с включаемыми и исключаемыми границами, `height`, `remove` (лист, один и два потомка), `clear`, `to_dict`/`from_dict` с JSON round-trip; вставка и обходы итеративные. Тесты `tests/core/test_tree.py`: 10 000 вставок в случайном порядке и вырожденное дерево на 2 000 без `RecursionError`, удаление всех вариантов узлов. Проверено: 22 теста зелёные, mypy strict — 11 файлов, ruff и format чистые, coverage 93 % |
