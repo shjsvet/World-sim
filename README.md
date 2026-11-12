@@ -40,8 +40,15 @@ pip install -e ".[dev]"
 streamlit run src/worldsim/ui/app.py   # отладочный запуск без entry point
 ```
 
-Линтеры, тесты и coverage настраиваются в задаче T03 — до этого момента команды
-`pytest`, `mypy` и `ruff` в проекте не сконфигурированы.
+## Проверка качества
+
+```bash
+pytest                                           # тесты
+pytest --cov=worldsim --cov-report=term-missing  # покрытие
+mypy src                                         # статическая типизация (strict)
+ruff check .                                     # линтер
+ruff format --check .                            # форматирование
+```
 
 ## ИИ-модуль (этап 3)
 
