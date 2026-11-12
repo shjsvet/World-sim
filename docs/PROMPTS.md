@@ -173,11 +173,13 @@
 
 **Промпт:**
 
-> Реализуй `src/worldsim/core/geography.py` — модели тайлов и карты.
-> - `Biome(StrEnum)`: `OCEAN, COAST, PLAINS, FOREST, HILLS, MOUNTAINS, DESERT, TUNDRA, SWAMP`; свойства `is_water`, `emoji`, `color` (hex для Plotly), `food_modifier`, `defense_bonus` (понадобятся правилам войны).
-> - `RegionData(BaseModel)` с `ConfigDict(frozen=True)`: `id: int >= 0`, `x: int >= 0`, `y: int >= 0`, `biome: Biome`, `population: int >= 0`, `fertility: float` в `[0, 1]`; вычисляемые `capacity()` и `is_land`.
-> - `WorldMap(BaseModel, frozen)`: `size: int` (1..1024), `tiles: tuple[RegionData, ...]`; валидатор: `len(tiles) == size * size` и координаты тайла совпадают с индексом `y * size + x`; методы `at(x, y)`, `by_id(tile_id)`, `neighbors(x, y, diagonal=False)`, `land_tiles()`, `center()`.
-> - Тесты `tests/core/test_geography.py`: валидаторы (отрицательное население, fertility > 1, несовпадение размера), соседи в углу, на краю и в центре, диагонали, JSON round-trip, `is_water` для каждого биома.
+> Реализуй `src/worldsim/core/geography.py` — модели тайлов и карты. Полный список полей и их влияния — `docs/TASK.md`, раздел 7.
+> - `Biome(StrEnum)`: `OCEAN, COAST, PLAINS, FOREST, HILLS, MOUNTAINS, DESERT, TUNDRA, SWAMP`; свойства `is_water`, `emoji`, `color` (hex для Plotly), `base_fertility` (пустыня 10, равнины 80), `base_elevation`, `movement_cost`, `defense_bonus`.
+> - `ResourceType(StrEnum)`: `NONE, FOOD, WOOD, IRON, GOLD, MANA` — главный ресурс тайла (один на тайл); `ClimateZone(StrEnum)`: `TROPICAL, TEMPERATE, ARCTIC` — задел на будущее (глобальное похолодание), по умолчанию `TEMPERATE`.
+> - `RegionData(BaseModel, frozen=True)`: `id: int >= 0`; `x: int >= 0`; `y: int >= 0`; `biome: Biome`; `fertility: float` в `[0, 100]`; `elevation: float` в `[0, 9000]`; `has_river: bool = False`; `climate_zone: ClimateZone = TEMPERATE`; `resource_type: ResourceType = NONE`; `resource_amount: float >= 0 = 0`; `resource_depletion: float >= 0 = 0`; `infrastructure: float` в `[0, 100] = 0`; `population: int >= 0`; `population_capacity: int >= 0`; `culture: str | None` (1..64 или `None`); `happiness: float` в `[0, 100] = 50`; `urbanization: float` в `[0, 100] = 0`; `owner_id: int | None = None`; `army_presence: int >= 0 = 0`; `fortification: float` в `[0, 100] = 0`; `unrest: float` в `[0, 100] = 0`; `assimilation: float` в `[0, 1] = 0`.
+> - Вычисляемые свойства: `is_land`, `is_city` (`population > CITY_POPULATION_THRESHOLD` (`1000`) и `urbanization >= 50`), `defense_multiplier()` (`1 + fortification / 200 + biome.defense_bonus`), `food_output()` (`population * fertility / 100 * biome.food_modifier * (1 + 0.1 * has_river + infrastructure / 200)`) — формулу использует T19.
+> - `WorldMap(BaseModel, frozen)`: `size: int` (1..1024), `tiles: tuple[RegionData, ...]`; валидатор: `len(tiles) == size * size` и координаты тайла совпадают с индексом `y * size + x`; методы `at(x, y)`, `by_id(tile_id)`, `neighbors(x, y, diagonal=False)`, `land_tiles()`, `cities()`, `tiles_with(owner_id)`, `center()`.
+> - Тесты `tests/core/test_geography.py`: границы диапазонов (`fertility = 101`, `happiness = -1`, `elevation = 9001`, `assimilation = 1.1`), `is_city` на порогах 1000 и 50, `defense_multiplier` растёт с фортификацией, `food_output` учитывает реку и инфраструктуру, соседи в углу, на краю и в центре, диагонали, JSON round-trip, `is_water` для каждого биома.
 > **Готово, когда:** тесты зелёные, mypy strict, в моделях нет логики симуляции.
 
 ---
@@ -189,7 +191,7 @@
 **Промпт:**
 
 > Реализуй `src/worldsim/core/events.py` — модель сухого события: ИИ позже пишет по ним литературу, поэтому сами события должны быть строгими данными.
-> - `EventType(StrEnum)`: `PLAGUE, FAMINE, STARVATION, EXPANSION, WAR, BATTLE_WON, BATTLE_LOST, CAPITAL_FALL, MIGRATION, CULTURE_CLASH, TRADE, RECRUITMENT, DESERTION, TECH_ADVANCE, PEACE_OFFER, PEACE_TREATY, CUSTOM`.
+> - `EventType(StrEnum)`: `PLAGUE, FAMINE, STARVATION, EXPANSION, WAR, BATTLE_WON, BATTLE_LOST, CAPITAL_FALL, MIGRATION, CULTURE_CLASH, TRADE, RECRUITMENT, DESERTION, TECH_ADVANCE, PEACE_OFFER, PEACE_TREATY, RIOT, SECESSION, DEFECTION, CITY_RISE, RESOURCE_DEPLETED, OCCUPATION, CUSTOM`.
 > - `Event(BaseModel, frozen=True)`: `id: int >= 0`, `year: int >= 0`, `type: EventType`, `summary: str` (одна сухая строка ≤ 300 символов), `tile_ids: tuple[int, ...] = ()`, `faction_ids: tuple[int, ...] = ()`, `severity: float` в `[0, 1]`, `payload: dict[str, int | float | str | bool | None] = {}`.
 > - Фабрики `Event.plague(...)`, `Event.expansion(...)`, `Event.war(...)`, `Event.starvation(...)`, `Event.peace(...)`, чтобы правила не собирали словари руками; `as_dict()`.
 > - Тесты: границы `severity`, пустой `summary` отклоняется, JSON round-trip, фабрики заполняют нужные поля.
@@ -234,10 +236,13 @@
 **Промпт:**
 
 > Реализуй процедурную генерацию мира в `src/worldsim/generator/`.
-> - `terrain.py`: `generate_map(config: WorldConfig, rng: Rng) -> WorldMap`. Количество seed-точек `max(3, size*size // 20)`; биом назначается взвешенно; рост областей через BFS-flood-fill; сглаживание majority-фильтром (1–2 прохода); `COAST` добавляется по соседству с водой; `fertility` = базовый коэффициент биома + шум `rng.uniform(-0.1, 0.1)` с ограничением в `[0, 1]`; начальное население = `int(fertility * 100)` для суши и 0 для воды.
+> - `terrain.py`: `generate_map(config: WorldConfig, rng: Rng) -> WorldMap`. Количество seed-точек `max(3, size*size // 20)`; биом назначается взвешенно; рост областей через BFS-flood-fill; сглаживание majority-фильтром (1–2 прохода); `COAST` добавляется по соседству с водой.
+> - Поля тайла: `fertility` = `biome.base_fertility` + шум `rng.uniform(-10, 10)` + `10` за реку, границы `[0, 100]`; `elevation` = `biome.base_elevation` + шум (границы `[0, 9000]`); `has_river` — реки прокладываются от гор к ближайшей воде по убыванию высоты, на воде рек нет; вода получает `fertility = 0`, `population = 0`, `population_capacity = 0`.
+> - Ресурсы: один главный ресурс на тайл по биому (лес → `WOOD`, горы/холмы → `IRON` или `GOLD`, равнины/побережье → `FOOD`, болото → `MANA`, пустыня/тундра → `GOLD` или `NONE`); `resource_amount = rng.uniform(5, 20)`; `resource_depletion = resource_amount * rng.uniform(50, 200)` (лет добычи); у воды `NONE` и нули.
+> - Стартовые значения: `population_capacity = int(fertility * 5 + 20)`; `population = rng.int(0, population_capacity // 2)` для суши; `happiness = 60`, `unrest = 0`, `infrastructure = 0`, `fortification = 0`, `army_presence = 0`, `urbanization = min(100, population / 20)`, `culture = None`, `owner_id = None`, `assimilation = 0`.
 > - `world.py`: `create_world(config: WorldConfig) -> WorldState` — собирает карту через `Rng(config.seed)` и возвращает снимок года 0.
 > - Время и глобальный `random` запрещены: карта полностью определяется `config.seed`.
-> - Тесты `tests/generator/test_terrain.py`: одинаковый seed → идентичный `snapshot_hash`; разные seed → разные карты; на 64×64 присутствует минимум 4 различных биома; вода и суша не пустые; все тайлы внутри карты; детерминизм между процессами.
+> - Тесты `tests/generator/test_terrain.py`: одинаковый seed → идентичный `snapshot_hash`; разные seed → разные карты; на 64×64 минимум 4 биома, есть реки и тайлы с ресурсами; вода без населения и владельца; все значения в диапазонах; детерминизм между процессами.
 > **Готово, когда:** тесты зелёные, генерация 128×128 занимает меньше 2 секунд, mypy strict.
 
 ---
@@ -312,7 +317,7 @@
 **Промпт:**
 
 > Свяжи фракции с картой и снимком мира.
-> - В `RegionData` добавь `owner_id: int | None = None` с валидатором (`owner_id >= 0` или `None`).
+> - `owner_id` уже объявлен в `RegionData` (T08); свяжи его с фракциями: `owner_id` неотрицателен, водные тайлы не имеют владельца, `army_presence > 0` только у тайлов с владельцем.
 > - В `WorldState` добавь `factions: tuple[Faction, ...] = ()` и `model_validator(mode="after")`: все `owner_id` ссылаются на существующие фракции; у фракций уникальные `id`, `name`, `color`; столица принадлежит своей фракции; водные тайлы не имеют владельца.
 > - Обратная совместимость JSON: снимок без `owner_id` и `factions` читается со значениями по умолчанию.
 > - Тесты: несуществующий `owner_id` → ошибка, дубликат цвета → ошибка, владелец воды → ошибка, старый JSON читается, тесты T08 и T10 обновлены.
@@ -342,8 +347,8 @@
 **Промпт:**
 
 > Реализуй `src/worldsim/engine/metrics.py` — агрегированные показатели, на которые опираются правила.
-> - `FactionStats` (frozen): `faction_id`, `culture`, `tiles`, `population`, `food_production`, `food_consumption`, `treasury`, `food_stockpile`, `tech_level`, `army_size`, `military_power`, `morale`, `is_starving`, `is_low_morale`, `border_contact: tuple[int, ...]`, `enemies: tuple[int, ...]`.
-> - `compute_faction_stats(state: WorldState) -> dict[int, FactionStats]`: `food_production` = сумма `fertility * food_modifier * population * (1 + 0.05 * tech_level)` по тайлам фракции; `food_consumption` = `population * FOOD_PER_CAPITA`; `is_starving` = `food_stockpile <= 0` или `food_stockpile + food_production < food_consumption`; `is_low_morale` = `morale < MORALE_PEACE_THRESHOLD` (`0.3`); `military_power` = `Faction.military_power`; `enemies` — фракции с активной войной (из `WorldState.wars`, T41); `border_contact` — соседи по 4-связности с другим владельцем. `army_size` больше не выводится из населения — это состояние фракции.
+> - `FactionStats` (frozen): `faction_id`, `culture`, `tiles`, `population`, `food_production`, `food_consumption`, `treasury`, `food_stockpile`, `tech_level`, `army_size`, `military_power`, `morale`, `happiness_avg`, `unrest_avg`, `cities`, `is_starving`, `is_low_morale`, `border_contact: tuple[int, ...]`, `enemies: tuple[int, ...]`.
+> - `compute_faction_stats(state: WorldState) -> dict[int, FactionStats]`: `food_production` = сумма `RegionData.food_output()` по тайлам фракции (учитывает плодородие 0–100, реку, инфраструктуру и население); `food_consumption` = `population * FOOD_PER_CAPITA`; `happiness_avg` и `unrest_avg` — средние по населённым тайлам; `cities` — число тайлов с `is_city`; `is_starving` = `food_stockpile <= 0` или `food_stockpile + food_production < food_consumption`; `is_low_morale` = `morale < MORALE_PEACE_THRESHOLD` (`0.3`); `military_power` = `Faction.military_power`; `enemies` — фракции с активной войной (из `WorldState.wars`, T41); `border_contact` — соседи по 4-связности с другим владельцем. `army_size` больше не выводится из населения — это состояние фракции.
 > - Результат кэшируется в `StepContext.stats` на один шаг.
 > - Тесты: формулы на ручной карте из четырёх тайлов, фракция без территории, голод `is_starving`, корректный расчёт границ, отсутствие деления на ноль.
 > **Готово, когда:** тесты зелёные, метрики не мутируют снимок, mypy strict.
@@ -358,7 +363,7 @@
 
 > Реализуй `src/worldsim/engine/rules/expansion.py`.
 > - `ExpansionRule(priority=10)`: для каждой фракции (детерминированный порядок по `id`) решает, расширяться ли: при `is_starving` — всегда, иначе с вероятностью `aggressiveness * config.aggression * culture_conflict_factor(атакующий, защитник)`, но не чаще одной атаки за год; цели под перемирием (T41) пропускаются.
-> - Цель — соседний тайл другого владельца или нейтральный; выбор через `ctx.rng.weighted_choice` по весу `fertility / (military_power защитника + 1)`; нейтральный тайл занимается сразу, чужой — передаётся `WarResolutionRule` (T21) через очередь боёв в `StepContext`.
+> - Цель — соседний тайл другого владельца или нейтральный; вес цели: `fertility * (1 - fortification / 150) * (1 + unrest / 100) / (army_presence + 1)`; низкие тайлы предпочтительнее горных (`elevation` и `movement_cost` биома), нейтральный тайл занимается сразу, чужой — передаётся `WarResolutionRule` (T21) через очередь боёв в `StepContext`.
 > - Голод повышает шанс атаки, но не меняет `aggressiveness` — это делает `EconomyRule` (T40).
 > - Пишет `EXPANSION`, а при атаке — `WAR`, через фабрики `Event`.
 > - Тесты: фракция с `food_stockpile = 0` атакует; сытая и неагрессивная — нет; цели выбираются по слабости защитника; лимит одна атака за год; события попадают в летопись; исходный снимок не изменён.
@@ -373,7 +378,8 @@
 **Промпт:**
 
 > Реализуй `src/worldsim/engine/rules/war.py` — разрешение боёв, накопленных `ExpansionRule`.
-> - `WarResolutionRule(priority=20)`: для каждой заявки `attack = military_power атакующего * rng.uniform(0.8, 1.2) * culture_conflict_factor(атакующий, защитник)`, `defense = military_power защитника * biome.defense_bonus * rng.uniform(0.8, 1.2)`; при `attack > defense` тайл переходит атакующему.
+> - `WarResolutionRule(priority=20)`: для каждой заявки `attack = military_power атакующего * rng.uniform(0.8, 1.2) * culture_conflict_factor(атакующий, защитник)`; `defense = (army_presence защитника + 0.25 * army_size фракции-защитника) * biome.defense_bonus * RegionData.defense_multiplier() * rng.uniform(0.8, 1.2)`; при `attack > defense` тайл переходит атакующему.
+> - Оккупация: победитель оставляет в тайле `army_presence` до 5 % своей армии; `fortification` падает на 25–50 %, `unrest` растёт на 20, `happiness` падает на 10, население теряет 5–10 %; событие `OCCUPATION`.
 > - Потери: обе стороны теряют долю `army_size` (5–30 % в зависимости от разницы сил); проигравший теряет `morale` на `0.1`, победитель получает `+0.05` (в границах `[0, 1]`); победитель забирает из казны проигравшего трофеи (10–50 золота, не больше остатка).
 > - При переходе столицы — `CAPITAL_FALL` и перенос столицы на защищённый тайл победителя.
 > - В `WorldState` появляется `wars: tuple[War, ...] = ()`: битва между двумя фракциями заводит или обновляет запись войны (`core/diplomacy.py`: `id`, `attacker_id`, `defender_id`, `started_year`, `battles`, `attacker_losses`, `defender_losses`, `active`, `truce_until_year`), которую использует дипломатия T41.
@@ -391,10 +397,10 @@
 **Промпт:**
 
 > Добавь слой политической карты в UI.
-> - `figures.py`: `political_figure(state) -> go.Figure` — цвет = `Faction.color`, нейтральные тайлы серые, hover: фракция, культура, население, армия, боевая мощь; поддержка `layer="biomes" | "political"`.
-> - `app.py`: переключатель `st.radio("Слой карты", ["Биомы", "Политическая карта"])`, таблица фракций (цвет, имя, культура, идеология, территории, население, казна, запасы еды, технологии, армия, боевая мощь, мораль), панель ресурсов выбранной фракции, чекбокс «только выбранная фракция».
-> - В UI только отрисовка готовых `FactionStats`, никаких правил.
-> - Тесты: `political_figure` строит точку на каждый тайл, цвета совпадают с `Faction.color`, нейтральные серые, при 0 фракций карта не падает, таблица строится из `FactionStats` без обращения к `WorldState`.
+> - `figures.py`: `political_figure(state)` — цвет = `Faction.color`, нейтральные серые, hover: фракция, культура, население, армия, боевая мощь; `tile_layer_figure(state, layer)` — слои `biomes`, `political`, `resources`, `happiness`, `unrest`, `army` (цвет по выбранному показателю, hover со всеми параметрами тайла).
+> - `app.py`: переключатель слоя карты, панель тайла (координаты, биом, население и ёмкость, плодородие, высота, река, ресурс и остаток, инфраструктура, счастье, урбанизация, армия, фортификация, недовольство), таблица фракций (цвет, имя, культура, идеология, территории, население, казна, запасы еды, технологии, армия, боевая мощь, мораль), панель ресурсов фракции.
+> - В UI только отрисовка готовых `RegionData` и `FactionStats`, никаких правил.
+> - Тесты: `political_figure` строит точку на каждый тайл, цвета совпадают с `Faction.color`, нейтральные серые, при 0 фракций карта не падает, `tile_layer_figure` для каждого слоя строит точки и не требует Streamlit.
 > **Готово, когда:** тесты зелёные, переключение слоёв визуально работает на трёх фракциях.
 
 ---
@@ -409,6 +415,8 @@
 > - `create_world(WorldConfig(seed=42, size=32, initial_factions=3))` → `run(100)` → инварианты: территории валидны, все `owner_id` существуют, население неотрицательно, `treasury >= 0`, `food_stockpile >= 0`, `0 <= morale <= 1`, `army_size >= 0`, значения `resources` неотрицательны, летопись упорядочена по годам; полное исчезновение фракции допустимо только вместе с событием.
 > - Сценарий голода: выставить `food_stockpile = 0` → за 10 лет население падает, `aggressiveness` растёт, в летописи есть `STARVATION`.
 > - Сценарий мира: довести фракцию до `morale < 0.3` поражениями → появляются `PEACE_OFFER` и `PEACE_TREATY`, атаки на время перемирия прекращаются.
+> - Инварианты тайлов: `0 <= fertility/happiness/unrest/urbanization/fortification/infrastructure <= 100`, `elevation` в `[0, 9000]`, `army_presence >= 0`, `army_presence` только у тайлов с владельцем, `is_city` соответствует порогам.
+> - Сценарии тайлов: город появляется при населении больше 1000 и урбанизации не ниже 50 (`CITY_RISE`); при `unrest > 80` тайл отделяется или переходит к соседу (`SECESSION` / `DEFECTION`); добыча уменьшает `resource_depletion` и при нуле даёт `RESOURCE_DEPLETED`; оккупация повышает `unrest` и снижает `fortification`.
 > - Сохраняй снимок каждого 10-го года и проверяй, что его `snapshot_hash` не изменился после следующих шагов.
 > - Повторный прогон с тем же seed → идентичный финальный hash и идентичная летопись; с другим seed → отличается.
 > **Готово, когда:** тесты зелёные, прогон меньше 10 секунд, сценарии помечены маркером `integration`.
@@ -568,6 +576,7 @@
 > Добавь культуру и религию в модель и правила.
 > - `core/culture.py`: `Culture` (`id`, `name`, `traits: tuple[str, ...]`), `Religion` (`id`, `name`, `culture_id`, `zeal`); в `RegionData` — `culture_id: int | None`, `religion_id: int | None`; в `WorldState` — `cultures`, `religions` с валидацией ссылок.
 > - `Faction.culture` из T16 — строковая метка: валидатор `WorldState` требует, чтобы культура каждой фракции совпадала с `Culture.name` (регистр не важен); для миров без `cultures` проверка пропускается (обратная совместимость).
+> - `RegionData.culture` (T08) — культура населения тайла: при захвате тайла фракцией другой культуры `assimilation` растёт на 0.05–0.1 за год, если `happiness > 50`, и падает на 0.05 при войне и бунтах; при `assimilation >= 1.0` культура тайла меняется на культуру владельца, `assimilation` сбрасывается в 0.
 > - `engine/rules/culture.py`: `CultureClashRule` — при соседстве разных культур растёт напряжение; вероятность конфликта считается через `culture_conflict_factor` из T16 и `traits` культур; при высоком напряжении событие `CULTURE_CLASH` (падение населения и рождаемости); `ConversionRule` — религия с высоким `zeal` постепенно вытесняет соседнюю.
 > - UI: слой «Культуры».
 > - Тесты: валидаторы ссылок, конфликт только на границе культур, одинаковые культуры не конфликтуют, детерминизм.
@@ -598,8 +607,8 @@
 **Промпт:**
 
 > Добавь ресурсы и торговые пути.
-> - `core/resources.py`: `Resource(StrEnum)` (`GOLD`, `IRON`, `MANA_CRYSTAL`), `ResourceDeposit` (`tile_id`, `resource`, `amount`); в `RegionData` — `deposits: tuple[ResourceDeposit, ...] = ()`; `TradeRoute` (`from_tile`, `to_tile`, `resource`, `capacity`).
-> - `engine/rules/trade.py`: `TradeRule` — между соседними фракциями в мире (без активной войны и перемирия) строятся маршруты; каждая фракция получает доход в `treasury` и пополняет `resources` (T16) соответствующим ресурсом; при войне маршруты рвутся; событие `TRADE`.
+> - `core/resources.py`: `ResourceType` уже объявлен в T08; здесь — `TradeRoute` (`from_tile`, `to_tile`, `resource`, `capacity`) и `ExtractionRule` (`engine/rules/extraction.py`): при наличии владельца и `resource_type != NONE` фракция получает `resource_amount * (1 + infrastructure / 100) * (1 + 0.25 * has_river)` единиц ресурса; `FOOD` пополняет `food_stockpile`, `GOLD` — `treasury`, `IRON`/`WOOD`/`MANA` — `resources`; `resource_depletion` уменьшается на добычу, при нуле — событие `RESOURCE_DEPLETED`; город (`is_city`) даёт +20 % к добыче.
+> - `engine/rules/trade.py`: `TradeRule` — между соседними тайлами разных фракций в мире (без войны и перемирия) строятся маршруты; бонус дают река и инфраструктура; каждая фракция получает доход в `treasury` и пополняет `resources`; при войне маршруты рвутся; событие `TRADE`.
 > - UI: слой ресурсов и панель торговли.
 > - Тесты: маршрут только между соседями, война рвёт маршрут, доход неотрицателен, детерминизм, обратная совместимость JSON.
 > **Готово, когда:** тесты зелёные, старые снимки читаются.
@@ -661,7 +670,7 @@
 
 > Реализуй `src/worldsim/engine/rules/economy.py` — экономику фракции, на которой держатся голод, армия и технологии.
 > - `EconomyRule(priority=5)` — выполняется до экспансии и войны, обходит фракции в порядке `id`.
-> - **Еда:** `food_stockpile += food_production - food_consumption` (формулы T19). Если запас стал отрицательным — обнуляется, население фракции теряет 5–15 % (доля через `ctx.rng`), `morale -= 0.05`, `aggressiveness += 0.05` (в границах `[0, 1]`), событие `STARVATION` с `severity` = доля потерь.
+> - **Еда:** `food_stockpile += food_production - food_consumption` (формулы T19 на основе `RegionData.food_output()`; счастье и недовольство реагируют в T42). Если запас стал отрицательным — обнуляется, население фракции теряет 5–15 % (доля через `ctx.rng`), `morale -= 0.05`, `aggressiveness += 0.05` (в границах `[0, 1]`), событие `STARVATION` с `severity` = доля потерь.
 > - **Содержание армии:** `army_size * UPKEEP_PER_SOLDIER` списывается из `treasury`; при нехватке `army_size` уменьшается (дезертирство), `morale -= 0.02`, событие `DESERTION`.
 > - **Набор:** если `treasury` выше порога и `army_size < population * ideology.army_share`, фракция набирает рекрутов за золото, но не больше 10 % населения за год; событие `RECRUITMENT`.
 > - **Технологии:** при профиците казны `tech_level += 0.02 * (1 + бонус идеологии)` (потолок `10`) за золото; событие `TECH_ADVANCE`.
@@ -686,6 +695,40 @@
 > - UI: статус «в войне» / «перемирие до года N» в панели фракции.
 > - Тесты: низкая мораль рождает `PEACE_OFFER`; принятие завершает войну и прекращает атаки на время перемирия; высокая мораль сохраняет войну; снимок иммутабелен; одинаковый seed → одинаковое поведение.
 > **Готово, когда:** тесты зелёные, сценарий мира из T23 проходит, mypy strict.
+
+---
+
+### T42 — Социальная динамика тайлов: счастье, недовольство, урбанизация
+
+*Этап 1 Фракции · P1 · зависит: T17, T34, T40*
+
+**Промпт:**
+
+> Реализуй `src/worldsim/engine/rules/social.py` — социальную динамику тайлов.
+> - `HappinessRule(priority=12)`: счастье растёт при запасах еды, культуре владельца, низком `unrest` и присутствии армии; падает при голоде, войне, чужой культуре и высоком `unrest`; шаг 1–3 пункта за год, границы `[0, 100]`.
+> - `UnrestRule(priority=13)`: недовольство растёт от счастья ниже 40, голода и чужой культуры, снижается армией и инфраструктурой; границы `[0, 100]`.
+> - `RiotRule`: при `happiness < 20` и `unrest > 60` — бунт: население −5–15 %, событие `RIOT`, `unrest += 10`.
+> - `SecessionRule`: при `unrest > 80` тайл отделяется (`owner_id = None`, `army_presence = 0`, событие `SECESSION`) или переходит к соседней фракции той же культуры (событие `DEFECTION`), выбор — детерминированно по соседям.
+> - `UrbanizationRule`: `urbanization` растёт при населении больше 500 и `infrastructure > 20`, падает при голоде и бунтах; при `population > 1000` и `urbanization >= 50` тайл становится городом (`is_city`), событие `CITY_RISE`; город даёт +20 % к добыче и +10 к `population_capacity`.
+> - Изменения только через `tile_updates`; обход тайлов по `id`; `ctx.rng` — только для пороговых случаев.
+> - Тесты: бунт при низком счастье; отделение при `unrest > 80`; город на пороге; счастье восстанавливается в мирные годы; одинаковый seed → одинаковое поведение.
+> **Готово, когда:** тесты зелёные, события `RIOT` / `SECESSION` / `DEFECTION` / `CITY_RISE` попадают в летопись, mypy strict.
+
+---
+
+### T43 — Армии на карте: присутствие, перемещение, оккупация
+
+*Этап 1 Фракции · P1 · зависит: T17, T20, T21*
+
+**Промпт:**
+
+> Реализуй армии на карте в `src/worldsim/engine/rules/army.py`.
+> - `ArmyMovementRule(priority=7)`: фракция распределяет `army_size` по своим тайлам; приоритет — тайлы на границе с врагом и тайлы с высоким `unrest`; стоимость перемещения учитывает `biome.movement_cost`, `elevation` и `has_river`/`infrastructure`; суммарный `army_presence` не превышает `army_size`.
+> - `OccupationRule(priority=21)`: тайл с чужим `army_presence` оккупируется только после победы в бою (T21); оккупант оставляет гарнизон, `unrest += 20`, `happiness -= 10`; при потере гарнизона тайл возвращается владельцу или становится нейтральным — событие `OCCUPATION`.
+> - `FrontlineRule`: тайлы на границе с враждебной фракцией получают +20 % к распределению армии; присутствие армии даёт +10 к защите тайла (учитывается T21).
+> - UI: слой «Армии» и число солдат в hover.
+> - Тесты: сумма `army_presence` ≤ `army_size`; армия стягивается к фронту; река ускоряет перемещение; оккупация меняет `owner_id` только после боя; детерминизм.
+> **Готово, когда:** тесты зелёные, сценарий оккупации из T23 проходит, mypy strict.
 
 ## Журнал изменений промптов
 
@@ -712,6 +755,20 @@
 | 2026-11-12 | T36 | Торговля пополняет `resources` и `treasury` фракции | Ресурсы фракции должны откуда-то браться |
 | 2026-11-12 | T40 | Новая задача: экономика фракции — снабжение, казна, армия, технологии | Требования «еда → голод», «казна → армия», «технологии» не покрывались задачами |
 | 2026-11-12 | T41 | Новая задача: дипломатия — запрос мира и перемирие | Требование «мораль падает → запрос мира» требует модели войн |
+| 2026-11-12 | T08 | Модель тайла расширена до 20 параметров; добавлены `ResourceType`, `ClimateZone`, вычисляемые `is_city`, `defense_multiplier()`, `food_output()` | Требование заказчика: параметры тайла и их влияние |
+| 2026-11-12 | T09 | Добавлены события `RIOT`, `SECESSION`, `DEFECTION`, `CITY_RISE`, `RESOURCE_DEPLETED`, `OCCUPATION` | Новые социальные, ресурсные и военные события |
+| 2026-11-12 | T12 | Генератор задаёт плодородие 0–100, высоту, реки, ресурсы с истощением, ёмкость и социальные показатели | Поля тайла нельзя оставлять пустыми |
+| 2026-11-12 | T17 | `owner_id` перенесён в T08; добавлена валидация воды и присутствия армии | Поле объявлено раньше, чем появилась связь с фракциями |
+| 2026-11-12 | T19 | Метрики считаются через `RegionData.food_output()` и агрегируют счастье, недовольство и города | Формула еды зависит от реки и инфраструктуры |
+| 2026-11-12 | T20 | Выбор цели учитывает фортификацию, недовольство, высоту и гарнизон | Параметры тайла должны влиять на решения о войне |
+| 2026-11-12 | T21 | Защита строится из гарнизона, фортификации и биома; добавлена оккупация | Требование заказчика: армия, фортификация и население тайла |
+| 2026-11-12 | T22 | UI получил слои ресурсов, счастья, недовольства и армий, панель тайла | Пользователь должен видеть новые параметры |
+| 2026-11-12 | T23 | Инварианты новых полей и сценарии города, отделения, истощения, оккупации | Покрыть новое поведение тестами |
+| 2026-11-12 | T34 | Культура населения тайла и ассимиляция при оккупации | Требование: культура меняется медленно |
+| 2026-11-12 | T36 | Добыча ресурсов из тайлов с истощением, бонусами инфраструктуры и рек | Один тайл — один главный ресурс |
+| 2026-11-12 | T40 | Экономика опирается на `food_output()` тайлов | Единая формула производства еды |
+| 2026-11-12 | T42 | Новая задача: социальная динамика тайлов (счастье, недовольство, урбанизация) | Требования «бунты», «отделение», «города» не покрывались задачами |
+| 2026-11-12 | T43 | Новая задача: армии на карте, фронты и оккупация | Требование «army_presence для фронтов и оккупации» |
 
 ## Новые задачи, добавленные при декомпозиции
 
@@ -729,3 +786,5 @@
 | T39 | Тип продукта изменён на приложение: нужна точка входа `worldsim`, страница запуска и документация вместо библиотечных формулировок |
 | T40 | Требования «запасы еды → голод», «казна → армия и строительство», «технологии» не покрывались ни одной задачей |
 | T41 | Требование «мораль падает → фракция запрашивает мир» требует модели войн и перемирий |
+| T42 | Требования «счастье → бунты», «недовольство → отделение», «урбанизация → город» не покрывались задачами |
+| T43 | Требование «army_presence для фронтов и оккупации» требует перемещения армий и правил оккупации |
