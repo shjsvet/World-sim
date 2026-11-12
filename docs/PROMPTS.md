@@ -176,10 +176,10 @@
 > Реализуй `src/worldsim/core/geography.py` — модели тайлов и карты. Полный список полей и их влияния — `docs/TASK.md`, раздел 7.
 > - `Biome(StrEnum)`: `OCEAN, COAST, PLAINS, FOREST, HILLS, MOUNTAINS, DESERT, TUNDRA, SWAMP`; свойства `is_water`, `emoji`, `color` (hex для Plotly), `base_fertility` (пустыня 10, равнины 80), `base_elevation`, `movement_cost`, `defense_bonus`.
 > - `ResourceType(StrEnum)`: `NONE, FOOD, WOOD, IRON, GOLD, MANA` — главный ресурс тайла (один на тайл); `ClimateZone(StrEnum)`: `TROPICAL, TEMPERATE, ARCTIC` — задел на будущее (глобальное похолодание), по умолчанию `TEMPERATE`.
-> - `RegionData(BaseModel, frozen=True)`: `id: int >= 0`; `x: int >= 0`; `y: int >= 0`; `biome: Biome`; `fertility: float` в `[0, 100]`; `elevation: float` в `[0, 9000]`; `has_river: bool = False`; `climate_zone: ClimateZone = TEMPERATE`; `resource_type: ResourceType = NONE`; `resource_amount: float >= 0 = 0`; `resource_depletion: float >= 0 = 0`; `infrastructure: float` в `[0, 100] = 0`; `population: int >= 0`; `population_capacity: int >= 0`; `culture: str | None` (1..64 или `None`); `happiness: float` в `[0, 100] = 50`; `urbanization: float` в `[0, 100] = 0`; `owner_id: int | None = None`; `army_presence: int >= 0 = 0`; `fortification: float` в `[0, 100] = 0`; `unrest: float` в `[0, 100] = 0`; `assimilation: float` в `[0, 1] = 0`.
+> - `RegionData(BaseModel, frozen=True)`: `id: int >= 0`; `x: int >= 0`; `y: int >= 0`; `biome: Biome`; `fertility: float` в `[0, 100]`; `elevation: float` в `[0, 9000]`; `has_river: bool = False`; `climate_zone: ClimateZone = TEMPERATE`; `resource_type: ResourceType = NONE`; `resource_amount: float >= 0 = 0`; `resource_depletion: float >= 0 = 0`; `infrastructure: float` в `[0, 100] = 0`; `population: int >= 0`; `population_capacity: int >= 0`; `culture: str | None` (1..64 или `None`); `happiness: float` в `[0, 100] = 50`; `urbanization: float` в `[0, 100] = 0`; `owner_id: int | None = None`; `army_presence: int >= 0 = 0`; `fortification: float` в `[0, 100] = 0`; `unrest: float` в `[0, 100] = 0`; `assimilation: float` в `[0, 1] = 0`; `mana_density: int` в `[0, 100] = 0`; `mana_regeneration: int >= 0 = 0`; `ley_line: bool = False`.
 > - Вычисляемые свойства: `is_land`, `is_city` (`population > CITY_POPULATION_THRESHOLD` (`1000`) и `urbanization >= 50`), `defense_multiplier()` (`1 + fortification / 200 + biome.defense_bonus`), `food_output()` (`population * fertility / 100 * biome.food_modifier * (1 + 0.1 * has_river + infrastructure / 200)`) — формулу использует T19.
 > - `WorldMap(BaseModel, frozen)`: `size: int` (1..1024), `tiles: tuple[RegionData, ...]`; валидатор: `len(tiles) == size * size` и координаты тайла совпадают с индексом `y * size + x`; методы `at(x, y)`, `by_id(tile_id)`, `neighbors(x, y, diagonal=False)`, `land_tiles()`, `cities()`, `tiles_with(owner_id)`, `center()`.
-> - Тесты `tests/core/test_geography.py`: границы диапазонов (`fertility = 101`, `happiness = -1`, `elevation = 9001`, `assimilation = 1.1`), `is_city` на порогах 1000 и 50, `defense_multiplier` растёт с фортификацией, `food_output` учитывает реку и инфраструктуру, соседи в углу, на краю и в центре, диагонали, JSON round-trip, `is_water` для каждого биома.
+> - Тесты `tests/core/test_geography.py`: границы диапазонов (`fertility = 101`, `happiness = -1`, `elevation = 9001`, `assimilation = 1.1`), `is_city` на порогах 1000 и 50, `defense_multiplier` растёт с фортификацией, `food_output` учитывает реку и инфраструктуру, `mana_density` и `mana_regeneration` в диапазонах, соседи в углу, на краю и в центре, диагонали, JSON round-trip, `is_water` для каждого биома.
 > **Готово, когда:** тесты зелёные, mypy strict, в моделях нет логики симуляции.
 
 ---
@@ -191,7 +191,7 @@
 **Промпт:**
 
 > Реализуй `src/worldsim/core/events.py` — модель сухого события: ИИ позже пишет по ним литературу, поэтому сами события должны быть строгими данными.
-> - `EventType(StrEnum)`: `PLAGUE, FAMINE, STARVATION, EXPANSION, WAR, BATTLE_WON, BATTLE_LOST, CAPITAL_FALL, MIGRATION, CULTURE_CLASH, TRADE, RECRUITMENT, DESERTION, TECH_ADVANCE, PEACE_OFFER, PEACE_TREATY, RIOT, SECESSION, DEFECTION, CITY_RISE, RESOURCE_DEPLETED, OCCUPATION, CUSTOM`.
+> - `EventType(StrEnum)`: `PLAGUE, FAMINE, STARVATION, EXPANSION, WAR, BATTLE_WON, BATTLE_LOST, CAPITAL_FALL, MIGRATION, CULTURE_CLASH, TRADE, RECRUITMENT, DESERTION, TECH_ADVANCE, PEACE_OFFER, PEACE_TREATY, RIOT, SECESSION, DEFECTION, CITY_RISE, RESOURCE_DEPLETED, OCCUPATION, ACADEMY_FOUNDED, MAGIC_BREAKTHROUGH, LEY_LINE_CLAIMED, CUSTOM`.
 > - `Event(BaseModel, frozen=True)`: `id: int >= 0`, `year: int >= 0`, `type: EventType`, `summary: str` (одна сухая строка ≤ 300 символов), `tile_ids: tuple[int, ...] = ()`, `faction_ids: tuple[int, ...] = ()`, `severity: float` в `[0, 1]`, `payload: dict[str, int | float | str | bool | None] = {}`.
 > - Фабрики `Event.plague(...)`, `Event.expansion(...)`, `Event.war(...)`, `Event.starvation(...)`, `Event.peace(...)`, чтобы правила не собирали словари руками; `as_dict()`.
 > - Тесты: границы `severity`, пустой `summary` отклоняется, JSON round-trip, фабрики заполняют нужные поля.
@@ -239,10 +239,11 @@
 > - `terrain.py`: `generate_map(config: WorldConfig, rng: Rng) -> WorldMap`. Количество seed-точек `max(3, size*size // 20)`; биом назначается взвешенно; рост областей через BFS-flood-fill; сглаживание majority-фильтром (1–2 прохода); `COAST` добавляется по соседству с водой.
 > - Поля тайла: `fertility` = `biome.base_fertility` + шум `rng.uniform(-10, 10)` + `10` за реку, границы `[0, 100]`; `elevation` = `biome.base_elevation` + шум (границы `[0, 9000]`); `has_river` — реки прокладываются от гор к ближайшей воде по убыванию высоты, на воде рек нет; вода получает `fertility = 0`, `population = 0`, `population_capacity = 0`.
 > - Ресурсы: один главный ресурс на тайл по биому (лес → `WOOD`, горы/холмы → `IRON` или `GOLD`, равнины/побережье → `FOOD`, болото → `MANA`, пустыня/тундра → `GOLD` или `NONE`); `resource_amount = rng.uniform(5, 20)`; `resource_depletion = resource_amount * rng.uniform(50, 200)` (лет добычи); у воды `NONE` и нули.
+> - Мана: `mana_density` = базовая плотность биома (горы 60, лес 40, болото 50, пустыня 5, равнины 10, тундра 15, побережье 15, океан 0) + шум `±10`, границы `[0, 100]`; `mana_regeneration = max(1, mana_density // 10)`; узлы лей-линий (`ley_line = True`) выбираются детерминированно на суше, `min(8, max(1, size // 12))` штук, с разносом; такому тайлу `mana_density = 100`, `mana_regeneration = 50`.
 > - Стартовые значения: `population_capacity = int(fertility * 5 + 20)`; `population = rng.int(0, population_capacity // 2)` для суши; `happiness = 60`, `unrest = 0`, `infrastructure = 0`, `fortification = 0`, `army_presence = 0`, `urbanization = min(100, population / 20)`, `culture = None`, `owner_id = None`, `assimilation = 0`.
 > - `world.py`: `create_world(config: WorldConfig) -> WorldState` — собирает карту через `Rng(config.seed)` и возвращает снимок года 0.
 > - Время и глобальный `random` запрещены: карта полностью определяется `config.seed`.
-> - Тесты `tests/generator/test_terrain.py`: одинаковый seed → идентичный `snapshot_hash`; разные seed → разные карты; на 64×64 минимум 4 биома, есть реки и тайлы с ресурсами; вода без населения и владельца; все значения в диапазонах; детерминизм между процессами.
+> - Тесты `tests/generator/test_terrain.py`: одинаковый seed → идентичный `snapshot_hash`; разные seed → разные карты; на 64×64 минимум 4 биома, есть реки, тайлы с ресурсами, узлы лей-линий и тайлы с маной; вода без населения и владельца; все значения в диапазонах; детерминизм между процессами.
 > **Готово, когда:** тесты зелёные, генерация 128×128 занимает меньше 2 секунд, mypy strict.
 
 ---
@@ -300,12 +301,14 @@
 
 > Реализуй `src/worldsim/core/faction.py` — фракция со всеми параметрами, на которые опираются правила этапа 1.
 > - `Ideology(StrEnum)`: `MILITARIST, MERCANTILE, AGRARIAN, THEOCRATIC, SCHOLARLY, NOMADIC`; свойства `aggression_bonus`, `army_share` (доля населения, которую фракция готова держать в армии) и `military_multiplier` (множитель боевой мощи).
-> - `Faction(BaseModel, frozen=True)`: `id: int >= 0`; `name: str` (1..64, strip, непустое); `color: str` (regex `^#[0-9A-Fa-f]{6}$`); `ideology: Ideology`; `capital_tile_id: int | None = None`; `culture: str` (1..64, непустая) — культурная группа («Люди», «Эльфы», «Орки»); `aggressiveness: float` в `[0, 1]` — текущая агрессивность (растёт от голода, снижается после мира); `treasury: float >= 0` — казна (тратится на армию, технологии и позже строительство); `food_stockpile: float >= 0` — запасы еды (при нуле начинается голод); `tech_level: float` в `[0, 10]` (дефолт `1.0`); `resources: dict[str, float]` — специфические ресурсы, например `{"iron": 500, "mana_crystals": 10}` (ключи непустые, значения `>= 0`); `army_size: float >= 0`; `morale: float` в `[0, 1]` (дефолт `0.8`) — боевой дух.
+> - `MagicSchool(StrEnum)`: `FIRE, ICE, NECROMANCY, NATURE` — магические школы фракции.
+> - `Faction(BaseModel, frozen=True)`: `id: int >= 0`; `name: str` (1..64, strip, непустое); `color: str` (regex `^#[0-9A-Fa-f]{6}$`); `ideology: Ideology`; `capital_tile_id: int | None = None`; `culture: str` (1..64, непустая) — культурная группа («Люди», «Эльфы», «Орки»); `aggressiveness: float` в `[0, 1]` — текущая агрессивность (растёт от голода, снижается после мира); `treasury: float >= 0` — казна (тратится на армию, технологии и позже строительство); `food_stockpile: float >= 0` — запасы еды (при нуле начинается голод); `tech_level: float` в `[0, 10]` (дефолт `1.0`); `resources: dict[str, float]` — специфические ресурсы, например `{"iron": 500, "mana_crystals": 10}` (ключи непустые, значения `>= 0`); `army_size: float >= 0`; `morale: float` в `[0, 1]` (дефолт `0.8`) — боевой дух; `mana_pool: int >= 0 = 0` — накопленная мана; `magic_affinity: int` в `[0, 100] = 0` — склонность к магии; `magic_schools: tuple[MagicSchool, ...] = ()` — доступные школы (при `magic_affinity > 0` хотя бы одна).
 > - `military_power` — **вычисляемое** поле (`@computed_field` над `@property`): `army_size * (1 + 0.1 * tech_level) * ideology.military_multiplier`; именно оно сравнивается при разрешении войны, поэтому не хранится как редактируемое поле и игнорируется при десериализации.
-> - `evolve(**changes) -> Faction` — новый провалидированный объект, собранный только из `Faction.model_fields` (вычисляемое `military_power` не передаётся); `resources` копируется, чтобы снимки не делили один словарь.
+> - `magic_power() -> float` — вычисляемый метод: `(magic_affinity / 100) * (1 + 0.1 * tech_level) * (1 + 0.25 * len(magic_schools))`; используется T21 как множитель к боевой мощи и T45 для боевых заклинаний.
+> - `evolve(**changes) -> Faction` — новый провалидированный объект, собранный только из `Faction.model_fields` (вычисляемые `military_power` и `magic_power()` не передаются); `resources` копируется, чтобы снимки не делили один словарь.
 > - Функция `culture_conflict_factor(a: Faction, b: Faction) -> float`: одинаковая культура — `0.2`, разные — `1.0`, неизвестные пары — `CULTURE_CONFLICT_BASE = 0.5`; используется правилами T20, T21, T34.
 > - Уникальность имён и цветов проверяется на уровне мира (T17), не внутри `Faction`.
-> - Тесты: валидаторы полей (отрицательная казна, `tech_level > 10`, пустая культура, отрицательный ресурс), `military_power` зависит от армии, технологий и идеологии, `evolve` не мутирует исходную фракцию и её `resources`, frozen, JSON round-trip, `culture_conflict_factor` для одинаковых и разных культур.
+> - Тесты: валидаторы полей (отрицательная казна, `tech_level > 10`, пустая культура, отрицательный ресурс), `military_power` зависит от армии, технологий и идеологии, `evolve` не мутирует исходную фракцию и её `resources`, frozen, JSON round-trip, `culture_conflict_factor` для одинаковых и разных культур, `mana_pool` неотрицателен, `magic_affinity` в `[0, 100]`, при `magic_affinity > 0` школы не пусты, `magic_power()` растёт с технологиями и числом школ.
 > **Готово, когда:** тесты зелёные, mypy strict.
 
 ---
@@ -333,7 +336,7 @@
 
 > Реализуй распределение стартовых фракций в `src/worldsim/generator/factions.py`.
 > - `spawn_factions(world_map: WorldMap, config: WorldConfig, rng: Rng) -> tuple[Faction, ...]`: количество = `config.initial_factions` (2..4; при 0 — без фракций); столицы выбираются детерминированно среди суши с высоким `fertility` и разносом не ближе `size // 4` (добор через `rng`); культура берётся из палитры (`Люди`, `Эльфы`, `Орки`, `Гномы`, `Нежить`) без повторов в одном мире; имена — из встроенного пула по культуре с суффиксом при коллизии; идеология назначается взвешенно; цвета — из встроенной палитры без повторов.
-> - Стартовые значения: `treasury = 100.0`, `food_stockpile = 200.0`, `tech_level = 1.0`, `morale = 0.8`, `army_size = population * ideology.army_share` (не меньше 1), `resources` — по культуре и идеологии (эльфы — `{"mana_crystals": 10}`, орки — `{"iron": 500}`, гномы — `{"iron": 300, "gold": 50}`, люди — `{"gold": 100}`), `aggressiveness` — из конфига с поправкой `ideology.aggression_bonus` в `[0, 1]`.
+> - Стартовые значения: `treasury = 100.0`, `food_stockpile = 200.0`, `tech_level = 1.0`, `morale = 0.8`, `army_size = population * ideology.army_share` (не меньше 1), `resources` — по культуре и идеологии (эльфы — `{"mana_crystals": 10}`, орки — `{"iron": 500}`, гномы — `{"iron": 300, "gold": 50}`, люди — `{"gold": 100}`), `aggressiveness` — из конфига с поправкой `ideology.aggression_bonus` в `[0, 1]`; `mana_pool = 0`; `magic_affinity` — по культуре (Эльфы 90, Нежить 70, Люди 50, Орки 40, Гномы 20); `magic_schools` — по культуре (Эльфы — `NATURE`, `ICE`; Гномы — `FIRE`; Орки — `FIRE`; Люди — `NATURE`; Нежить — `NECROMANCY`).
 > - Обнови `create_world`: `initial_factions` по умолчанию 2, территории раздаются BFS-заливкой от столиц с равной скоростью, нейтральные тайлы остаются `owner_id=None`.
 > - Тесты: число фракций соответствует конфигу, имена и цвета уникальны, культуры не повторяются, казна и запасы еды неотрицательны, `army_size` в допустимых границах, у каждой фракции непустая территория и столица принадлежит ей, все владельцы валидны, одинаковый seed → одинаковые культуры, имена, ресурсы и границы, при 0 фракций все `owner_id is None`.
 > **Готово, когда:** тесты зелёные, детерминизм подтверждён `snapshot_hash`, mypy strict.
@@ -347,8 +350,8 @@
 **Промпт:**
 
 > Реализуй `src/worldsim/engine/metrics.py` — агрегированные показатели, на которые опираются правила.
-> - `FactionStats` (frozen): `faction_id`, `culture`, `tiles`, `population`, `food_production`, `food_consumption`, `treasury`, `food_stockpile`, `tech_level`, `army_size`, `military_power`, `morale`, `happiness_avg`, `unrest_avg`, `cities`, `is_starving`, `is_low_morale`, `border_contact: tuple[int, ...]`, `enemies: tuple[int, ...]`.
-> - `compute_faction_stats(state: WorldState) -> dict[int, FactionStats]`: `food_production` = сумма `RegionData.food_output()` по тайлам фракции (учитывает плодородие 0–100, реку, инфраструктуру и население); `food_consumption` = `population * FOOD_PER_CAPITA`; `happiness_avg` и `unrest_avg` — средние по населённым тайлам; `cities` — число тайлов с `is_city`; `is_starving` = `food_stockpile <= 0` или `food_stockpile + food_production < food_consumption`; `is_low_morale` = `morale < MORALE_PEACE_THRESHOLD` (`0.3`); `military_power` = `Faction.military_power`; `enemies` — фракции с активной войной (из `WorldState.wars`, T41); `border_contact` — соседи по 4-связности с другим владельцем. `army_size` больше не выводится из населения — это состояние фракции.
+> - `FactionStats` (frozen): `faction_id`, `culture`, `tiles`, `population`, `food_production`, `food_consumption`, `treasury`, `food_stockpile`, `tech_level`, `army_size`, `military_power`, `morale`, `mana_pool`, `mana_income`, `magic_affinity`, `mana_density_avg`, `ley_lines`, `happiness_avg`, `unrest_avg`, `cities`, `is_starving`, `is_low_morale`, `border_contact: tuple[int, ...]`, `enemies: tuple[int, ...]`.
+> - `compute_faction_stats(state: WorldState) -> dict[int, FactionStats]`: `food_production` = сумма `RegionData.food_output()` по тайлам фракции (учитывает плодородие 0–100, реку, инфраструктуру и население); `food_consumption` = `population * FOOD_PER_CAPITA`; `happiness_avg` и `unrest_avg` — средние по населённым тайлам; `cities` — число тайлов с `is_city`; `is_starving` = `food_stockpile <= 0` или `food_stockpile + food_production < food_consumption`; `is_low_morale` = `morale < MORALE_PEACE_THRESHOLD` (`0.3`); `military_power` = `Faction.military_power`; `mana_income` = сумма `mana_regeneration` контролируемых тайлов; `mana_density_avg` — средняя плотность маны по тайлам; `ley_lines` — число захваченных узлов; `enemies` — фракции с активной войной (из `WorldState.wars`, T41); `border_contact` — соседи по 4-связности с другим владельцем. `army_size` больше не выводится из населения — это состояние фракции.
 > - Результат кэшируется в `StepContext.stats` на один шаг.
 > - Тесты: формулы на ручной карте из четырёх тайлов, фракция без территории, голод `is_starving`, корректный расчёт границ, отсутствие деления на ноль.
 > **Готово, когда:** тесты зелёные, метрики не мутируют снимок, mypy strict.
@@ -378,7 +381,7 @@
 **Промпт:**
 
 > Реализуй `src/worldsim/engine/rules/war.py` — разрешение боёв, накопленных `ExpansionRule`.
-> - `WarResolutionRule(priority=20)`: для каждой заявки `attack = military_power атакующего * rng.uniform(0.8, 1.2) * culture_conflict_factor(атакующий, защитник)`; `defense = (army_presence защитника + 0.25 * army_size фракции-защитника) * biome.defense_bonus * RegionData.defense_multiplier() * rng.uniform(0.8, 1.2)`; при `attack > defense` тайл переходит атакующему.
+> - `WarResolutionRule(priority=20)`: для каждой заявки `attack = military_power атакующего * (1 + 0.2 * magic_power() атакующего) * rng.uniform(0.8, 1.2) * culture_conflict_factor(атакующий, защитник)`; `defense = (army_presence защитника + 0.25 * army_size фракции-защитника) * (1 + 0.2 * magic_power() защитника) * biome.defense_bonus * RegionData.defense_multiplier() * rng.uniform(0.8, 1.2)`; при `attack > defense` тайл переходит атакующему.
 > - Оккупация: победитель оставляет в тайле `army_presence` до 5 % своей армии; `fortification` падает на 25–50 %, `unrest` растёт на 20, `happiness` падает на 10, население теряет 5–10 %; событие `OCCUPATION`.
 > - Потери: обе стороны теряют долю `army_size` (5–30 % в зависимости от разницы сил); проигравший теряет `morale` на `0.1`, победитель получает `+0.05` (в границах `[0, 1]`); победитель забирает из казны проигравшего трофеи (10–50 золота, не больше остатка).
 > - При переходе столицы — `CAPITAL_FALL` и перенос столицы на защищённый тайл победителя.
@@ -397,8 +400,8 @@
 **Промпт:**
 
 > Добавь слой политической карты в UI.
-> - `figures.py`: `political_figure(state)` — цвет = `Faction.color`, нейтральные серые, hover: фракция, культура, население, армия, боевая мощь; `tile_layer_figure(state, layer)` — слои `biomes`, `political`, `resources`, `happiness`, `unrest`, `army` (цвет по выбранному показателю, hover со всеми параметрами тайла).
-> - `app.py`: переключатель слоя карты, панель тайла (координаты, биом, население и ёмкость, плодородие, высота, река, ресурс и остаток, инфраструктура, счастье, урбанизация, армия, фортификация, недовольство), таблица фракций (цвет, имя, культура, идеология, территории, население, казна, запасы еды, технологии, армия, боевая мощь, мораль), панель ресурсов фракции.
+> - `figures.py`: `political_figure(state)` — цвет = `Faction.color`, нейтральные серые, hover: фракция, культура, население, армия, боевая мощь; `tile_layer_figure(state, layer)` — слои `biomes`, `political`, `resources`, `happiness`, `unrest`, `army`, `mana` (цвет по выбранному показателю, hover со всеми параметрами тайла).
+> - `app.py`: переключатель слоя карты, панель тайла (координаты, биом, население и ёмкость, плодородие, высота, река, ресурс и остаток, инфраструктура, счастье, урбанизация, армия, фортификация, недовольство, мана: плотность, регенерация и лей-линия), таблица фракций (цвет, имя, культура, идеология, территории, население, казна, запасы еды, технологии, армия, боевая мощь, мораль), панель ресурсов фракции.
 > - В UI только отрисовка готовых `RegionData` и `FactionStats`, никаких правил.
 > - Тесты: `political_figure` строит точку на каждый тайл, цвета совпадают с `Faction.color`, нейтральные серые, при 0 фракций карта не падает, `tile_layer_figure` для каждого слоя строит точки и не требует Streamlit.
 > **Готово, когда:** тесты зелёные, переключение слоёв визуально работает на трёх фракциях.
@@ -415,7 +418,8 @@
 > - `create_world(WorldConfig(seed=42, size=32, initial_factions=3))` → `run(100)` → инварианты: территории валидны, все `owner_id` существуют, население неотрицательно, `treasury >= 0`, `food_stockpile >= 0`, `0 <= morale <= 1`, `army_size >= 0`, значения `resources` неотрицательны, летопись упорядочена по годам; полное исчезновение фракции допустимо только вместе с событием.
 > - Сценарий голода: выставить `food_stockpile = 0` → за 10 лет население падает, `aggressiveness` растёт, в летописи есть `STARVATION`.
 > - Сценарий мира: довести фракцию до `morale < 0.3` поражениями → появляются `PEACE_OFFER` и `PEACE_TREATY`, атаки на время перемирия прекращаются.
-> - Инварианты тайлов: `0 <= fertility/happiness/unrest/urbanization/fortification/infrastructure <= 100`, `elevation` в `[0, 9000]`, `army_presence >= 0`, `army_presence` только у тайлов с владельцем, `is_city` соответствует порогам.
+> - Инварианты тайлов: `0 <= fertility/happiness/unrest/urbanization/fortification/infrastructure <= 100`, `elevation` в `[0, 9000]`, `army_presence >= 0`, `army_presence` только у тайлов с владельцем, `is_city` соответствует порогам, `mana_density` в `[0, 100]`, `mana_regeneration >= 0`, `mana_pool >= 0`.
+> - Сценарий магии: на карте есть лей-линии; фракция с академией растит `magic_affinity`; при достаточной мане война даёт бонус, при нуле `mana_pool` бонус равен нулю.
 > - Сценарии тайлов: город появляется при населении больше 1000 и урбанизации не ниже 50 (`CITY_RISE`); при `unrest > 80` тайл отделяется или переходит к соседу (`SECESSION` / `DEFECTION`); добыча уменьшает `resource_depletion` и при нуле даёт `RESOURCE_DEPLETED`; оккупация повышает `unrest` и снижает `fortification`.
 > - Сохраняй снимок каждого 10-го года и проверяй, что его `snapshot_hash` не изменился после следующих шагов.
 > - Повторный прогон с тем же seed → идентичный финальный hash и идентичная летопись; с другим seed → отличается.
@@ -607,7 +611,7 @@
 **Промпт:**
 
 > Добавь ресурсы и торговые пути.
-> - `core/resources.py`: `ResourceType` уже объявлен в T08; здесь — `TradeRoute` (`from_tile`, `to_tile`, `resource`, `capacity`) и `ExtractionRule` (`engine/rules/extraction.py`): при наличии владельца и `resource_type != NONE` фракция получает `resource_amount * (1 + infrastructure / 100) * (1 + 0.25 * has_river)` единиц ресурса; `FOOD` пополняет `food_stockpile`, `GOLD` — `treasury`, `IRON`/`WOOD`/`MANA` — `resources`; `resource_depletion` уменьшается на добычу, при нуле — событие `RESOURCE_DEPLETED`; город (`is_city`) даёт +20 % к добыче.
+> - `core/resources.py`: `ResourceType` уже объявлен в T08; здесь — `MANA` как ресурс — это добываемая кристаллическая мана, она отличается от фоновой `mana_density` тайла (T08), которая питает академии и заклинания. `TradeRoute` (`from_tile`, `to_tile`, `resource`, `capacity`) и `ExtractionRule` (`engine/rules/extraction.py`): при наличии владельца и `resource_type != NONE` фракция получает `resource_amount * (1 + infrastructure / 100) * (1 + 0.25 * has_river)` единиц ресурса; `FOOD` пополняет `food_stockpile`, `GOLD` — `treasury`, `IRON`/`WOOD`/`MANA` — `resources`; `resource_depletion` уменьшается на добычу, при нуле — событие `RESOURCE_DEPLETED`; город (`is_city`) даёт +20 % к добыче.
 > - `engine/rules/trade.py`: `TradeRule` — между соседними тайлами разных фракций в мире (без войны и перемирия) строятся маршруты; бонус дают река и инфраструктура; каждая фракция получает доход в `treasury` и пополняет `resources`; при войне маршруты рвутся; событие `TRADE`.
 > - UI: слой ресурсов и панель торговли.
 > - Тесты: маршрут только между соседями, война рвёт маршрут, доход неотрицателен, детерминизм, обратная совместимость JSON.
@@ -674,6 +678,7 @@
 > - **Содержание армии:** `army_size * UPKEEP_PER_SOLDIER` списывается из `treasury`; при нехватке `army_size` уменьшается (дезертирство), `morale -= 0.02`, событие `DESERTION`.
 > - **Набор:** если `treasury` выше порога и `army_size < population * ideology.army_share`, фракция набирает рекрутов за золото, но не больше 10 % населения за год; событие `RECRUITMENT`.
 > - **Технологии:** при профиците казны `tech_level += 0.02 * (1 + бонус идеологии)` (потолок `10`) за золото; событие `TECH_ADVANCE`.
+> - **Мана:** `mana_pool += mana_income` (T19: сумма `mana_regeneration` контролируемых тайлов), `mana_pool` не уходит в минус; расход маны — в T44 и T45.
 > - **Строительство:** пока не моделируется — расходы зарезервированы под будущую задачу (отметь в docstring).
 > - Все изменения — через `faction_updates` и `evolve`; порядок обхода и все случайные числа детерминированы.
 > - Тесты: голод уменьшает население и повышает агрессивность; пустая казна даёт дезертирство; профицит растит `tech_level` с потолком; армия не превышает `army_share * population`; `treasury` и `food_stockpile` не уходят в минус; одинаковый seed → одинаковые значения; исходный снимок не изменён.
@@ -730,6 +735,40 @@
 > - Тесты: сумма `army_presence` ≤ `army_size`; армия стягивается к фронту; река ускоряет перемещение; оккупация меняет `owner_id` только после боя; детерминизм.
 > **Готово, когда:** тесты зелёные, сценарий оккупации из T23 проходит, mypy strict.
 
+---
+
+### T44 — Магическая экономика: доход маны, академии, школы
+
+*Этап 5 Магия · P2 · зависит: T16, T19, T40*
+
+**Промпт:**
+
+> Реализуй магическую экономику в `src/worldsim/core/magic.py` и `src/worldsim/engine/rules/magic.py`.
+> - `MagicAcademy(BaseModel, frozen=True)`: `id`, `tile_id`, `faction_id`, `school: MagicSchool`, `level: int >= 1`, `founded_year: int`; в `WorldState` — `academies: tuple[MagicAcademy, ...] = ()` с валидацией: тайл принадлежит фракции, `mana_density >= ACADEMY_MIN_DENSITY` (`50`), не больше одной академии на тайл.
+> - `ManaRule(priority=6)`: `mana_pool += mana_income` (доход T19: сумма `mana_regeneration` контролируемых тайлов; лей-линии учитываются своим приростом); `mana_pool` не уходит в минус.
+> - `AcademyRule(priority=14)`: фракция строит академию, если `treasury >= 100` и `mana_pool >= 50`, выбирая тайл с максимальной `mana_density` (детерминированно, без Streamlit); списывает золото и ману, событие `ACADEMY_FOUNDED`.
+> - `MagicResearchRule(priority=15)`: при `mana_pool >= 20` и наличии академий `magic_affinity += 1` (потолок 100), уровень школ растёт; без академий склонность не растёт; событие `MAGIC_BREAKTHROUGH` раз в несколько лет.
+> - `magic_power()` фракции (T16) учитывает `magic_affinity`, `tech_level` и число школ.
+> - Тесты: мана копится и не уходит в минус; академия строится только на тайле с плотностью не ниже 50 и при достаточных ресурсах; без маны исследования не идут; лей-линия даёт больше дохода; детерминизм.
+> **Готово, когда:** тесты зелёные, события `ACADEMY_FOUNDED` / `MAGIC_BREAKTHROUGH` попадают в летопись, mypy strict.
+
+---
+
+### T45 — Магия в бою: школы, контршколы, расход маны
+
+*Этап 5 Магия · P2 · зависит: T21, T44*
+
+**Промпт:**
+
+> Реализуй боевую магию в `src/worldsim/engine/rules/battle_magic.py`.
+> - `MagicCombatRule(priority=18)` (до `WarResolutionRule`): перед боем фракция может потратить до 10 % `mana_pool` на усиление; `magic_bonus = 0.2 * (mana_spent / max(1, mana_pool_before)) * magic_power()`.
+> - Контршколы: цикл `FIRE > ICE > NATURE > NECROMANCY > FIRE`; если у атакующего есть школа, побеждающая школу защитника, атака получает +15 %, иначе −10 %.
+> - `magic_power()` (T16) = `(magic_affinity / 100) * (1 + 0.1 * tech_level) * (1 + 0.25 * len(magic_schools))`; T21 использует его как множитель, T45 добавляет школы и расход маны.
+> - Расход маны пишется в событие `WAR` (`payload["mana_spent"]`); при нулевом `mana_pool` бонус равен нулю.
+> - UI: магическая мощь и потраченная мана в панели фракции и в отчёте о битве.
+> - Тесты: контршкола даёт преимущество; без маны бонуса нет; расход не превышает `mana_pool`; бой детерминирован при фиксированном seed.
+> **Готово, когда:** тесты зелёные, сценарий магической войны из T23 проходит, mypy strict.
+
 ## Журнал изменений промптов
 
 Любое изменение формулировки, порядка или состава промптов фиксируется здесь: дата, задача, что именно изменилось и почему. Журнал не переписывается задним числом — новые записи добавляются снизу.
@@ -769,6 +808,19 @@
 | 2026-11-12 | T40 | Экономика опирается на `food_output()` тайлов | Единая формула производства еды |
 | 2026-11-12 | T42 | Новая задача: социальная динамика тайлов (счастье, недовольство, урбанизация) | Требования «бунты», «отделение», «города» не покрывались задачами |
 | 2026-11-12 | T43 | Новая задача: армии на карте, фронты и оккупация | Требование «army_presence для фронтов и оккупации» |
+| 2026-11-12 | T08 | Добавлены `mana_density`, `mana_regeneration`, `ley_line` и проверки диапазонов | Требование заказчика: магические параметры тайла |
+| 2026-11-12 | T09 | Добавлены события `ACADEMY_FOUNDED`, `MAGIC_BREAKTHROUGH`, `LEY_LINE_CLAIMED` | События магической экономики и войн за лей-линии |
+| 2026-11-12 | T12 | Генератор задаёт плотность и регенерацию маны, расставляет узлы лей-линий | Лей-линии должны быть редкими и ценными |
+| 2026-11-12 | T16 | Добавлены `MagicSchool`, `mana_pool`, `magic_affinity`, `magic_schools`, метод `magic_power()` | Требование заказчика: магические параметры фракции |
+| 2026-11-12 | T18 | Стартовые `magic_affinity` и школы задаются культурой | Эльфы, гномы, орки и нежить различаются магией |
+| 2026-11-12 | T19 | Метрики считают `mana_income`, `mana_density_avg` и захваченные лей-линии | Доход маны складывается из тайлов |
+| 2026-11-12 | T21 | Боевая мощь умножается на магическую (`magic_power()`) | Маги должны усиливать армию |
+| 2026-11-12 | T22 | Слой «Мана» и магические показатели в панели тайла | Новые параметры должны быть видны |
+| 2026-11-12 | T23 | Проверяются инварианты маны и сценарий магической войны | Покрытие новой механики тестами |
+| 2026-11-12 | T36 | Уточнено различие ресурса `MANA` и фоновой `mana_density` | Два разных понятия маны |
+| 2026-11-12 | T40 | Добавлено накопление `mana_pool` из `mana_income` | Мана должна копиться |
+| 2026-11-12 | T44 | Новая задача: магическая экономика, академии и школы | Требования «академии» и «рост магии» не покрывались задачами |
+| 2026-11-12 | T45 | Новая задача: боевая магия, контршколы и расход маны | Требование «сила магов в бою» |
 
 ## Новые задачи, добавленные при декомпозиции
 
@@ -788,3 +840,5 @@
 | T41 | Требование «мораль падает → фракция запрашивает мир» требует модели войн и перемирий |
 | T42 | Требования «счастье → бунты», «недовольство → отделение», «урбанизация → город» не покрывались задачами |
 | T43 | Требование «army_presence для фронтов и оккупации» требует перемещения армий и правил оккупации |
+| T44 | Требования «академии на богатых маной тайлах» и «магические школы» не покрывались задачами |
+| T45 | Требование «сила магов в бою» и контршколы требуют отдельного боевого правила |
