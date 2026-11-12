@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "worldsim"
 version = "0.1.0"
-description = "Симулятор эволюции мира с геополитикой и контролем версий"
+description = "Приложение-симулятор эволюции мира с геополитикой и контролем версий"
 readme = "README.md"
 requires-python = ">=3.11"
 keywords = ["simulation", "worldbuilding", "geopolitics", "procedural-generation"]
@@ -13,7 +13,8 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
-    "Typing :: Typed",
+    "Environment :: Web Environment",
+    "Framework :: Streamlit",
 ]
 dependencies = [
     "pydantic>=2.7",
@@ -33,11 +34,11 @@ ai = [
     "python-dotenv>=1.0",
 ]
 
+[project.scripts]
+worldsim = "worldsim.launcher:main"
+
 [tool.setuptools]
 package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.setuptools.package-data]
-worldsim = ["py.typed"]
