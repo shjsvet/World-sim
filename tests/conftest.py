@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import random
-
 import pytest
+
+from worldsim.core.rng import Rng
 
 
 @pytest.fixture()
@@ -13,23 +13,19 @@ def seed() -> int:
     return 42
 
 
-def deterministic_rng(seed: int = 42) -> random.Random:
+def deterministic_rng(seed: int = 42) -> Rng:
     """Возвращает детерминированный генератор для тестов.
 
     Args:
         seed: Сид генератора; по умолчанию 42.
 
     Returns:
-        Экземпляр ``random.Random`` с заданным сидом.
-
-    Note:
-        Временная реализация до появления ``worldsim.core.rng.Rng`` (T07):
-        после T07 хелпер будет переключён на него.
+        Экземпляр ``Rng`` с заданным сидом.
     """
-    return random.Random(seed)
+    return Rng(seed)
 
 
 @pytest.fixture()
-def rng(seed: int) -> random.Random:
+def rng(seed: int) -> Rng:
     """Детерминированный генератор на основе фикстуры ``seed``."""
     return deterministic_rng(seed)

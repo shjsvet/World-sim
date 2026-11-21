@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import json
-import random
 
+from worldsim.core.rng import Rng
 from worldsim.core.tree import BinarySearchTree
 
 
@@ -47,7 +47,7 @@ def test_insert_and_get_duplicates() -> None:
 def test_inorder_sorted_for_shuffled_input() -> None:
     """In-order обход отдаёт ключи по возрастанию при любом порядке вставки."""
     keys = list(range(200))
-    random.Random(1234).shuffle(keys)
+    Rng(1234).shuffle(keys)
     tree: BinarySearchTree[int, int] = BinarySearchTree()
     for key in keys:
         tree.insert(key, key * 10)
@@ -120,7 +120,7 @@ def test_remove_duplicates_removes_all_values() -> None:
 def test_large_tree_without_recursion_error() -> None:
     """10 000 вставок в случайном порядке и полный обход не вызывают рекурсию."""
     keys = list(range(10_000))
-    random.Random(7).shuffle(keys)
+    Rng(7).shuffle(keys)
     tree: BinarySearchTree[int, int] = BinarySearchTree()
     for key in keys:
         tree.insert(key, key)
