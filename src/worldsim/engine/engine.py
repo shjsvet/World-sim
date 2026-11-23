@@ -9,6 +9,7 @@ from worldsim.core.events import Event
 from worldsim.core.geography import RegionData, WorldMap
 from worldsim.core.rng import Rng
 from worldsim.core.state import WorldState
+from worldsim.engine.metrics import compute_faction_stats
 from worldsim.engine.rules import FactionUpdate, Rule, RuleOutcome, StepContext
 
 
@@ -71,7 +72,12 @@ class SimulationEngine:
             raise RuntimeError("снимок мира не установлен: передайте initial_state или reset()")
 
         state = self._state
-        ctx = StepContext(year=state.year, config=state.config, rng=self._rng)
+        ctx = StepContext(
+            year=state.year,
+            config=state.config,
+            rng=self._rng,
+            stats=compute_faction_stats(state),
+        )
 
         for rule in self._rules:
             outcome = rule.apply(state, ctx)

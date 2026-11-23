@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from worldsim.core.events import Event
 from worldsim.core.rng import Rng
 from worldsim.core.state import WorldConfig, WorldState
+
+if TYPE_CHECKING:
+    from worldsim.engine.metrics import FactionStats
 
 
 @dataclass(frozen=True)
@@ -48,7 +51,7 @@ class StepContext:
     year: int
     config: WorldConfig
     rng: Rng
-    stats: Mapping[int, object] = field(default_factory=dict)
+    stats: Mapping[int, FactionStats] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
