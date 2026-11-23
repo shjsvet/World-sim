@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
+from worldsim.core.diplomacy import War
 from worldsim.core.events import Event
 from worldsim.core.rng import Rng
 from worldsim.core.state import WorldConfig, WorldState
@@ -24,6 +25,10 @@ class TileUpdate:
         fertility: Новое плодородие; ``None`` — не менять.
         owner_id: Новый владелец (используется вместе с ``set_owner``).
         set_owner: Явно ли менять владельца (позволяет выставить ``None``).
+        happiness: Новое счастье; ``None`` — не менять.
+        unrest: Новое недовольство; ``None`` — не менять.
+        fortification: Новая фортификация; ``None`` — не менять.
+        army_presence: Новый гарнизон; ``None`` — не менять.
     """
 
     tile_id: int
@@ -31,6 +36,10 @@ class TileUpdate:
     fertility: float | None = None
     owner_id: int | None = None
     set_owner: bool = False
+    happiness: float | None = None
+    unrest: float | None = None
+    fortification: float | None = None
+    army_presence: int | None = None
 
 
 @dataclass(frozen=True)
@@ -71,6 +80,7 @@ class RuleOutcome:
     tile_updates: tuple[TileUpdate, ...] = ()
     faction_updates: tuple[FactionUpdate, ...] = ()
     events: tuple[Event, ...] = ()
+    wars: tuple[War, ...] | None = None
 
 
 class Rule(Protocol):

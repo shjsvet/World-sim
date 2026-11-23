@@ -8,6 +8,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from worldsim.core.diplomacy import War
 from worldsim.core.faction import Faction
 from worldsim.core.geography import WorldMap
 
@@ -43,6 +44,7 @@ class WorldState(BaseModel):
         year: Текущий год.
         map: Сетка тайлов.
         factions: Фракции мира.
+        wars: Активные и завершённые войны.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -51,6 +53,7 @@ class WorldState(BaseModel):
     year: int = Field(ge=0)
     map: WorldMap
     factions: tuple[Faction, ...] = ()
+    wars: tuple[War, ...] = ()
 
     @model_validator(mode="after")
     def _validate_factions(self) -> Self:
@@ -83,6 +86,14 @@ class WorldState(BaseModel):
             capital = self.map.by_id(faction.capital_tile_id)
             if capital.owner_id != faction.id:
                 raise ValueError(f"столица фракции {faction.id} не принадлежит ей")
+
+        if len({war.id for war in self.wars}) != len(self.wars):
+            raise ValueError("идентификаторы войн должны быть уникальны")
+        for war in self.wars:
+            if war.attacker_id == war.defender_id:
+                raise ValueError("фракция не может воевать сама с собой")
+            if war.attacker_id not in faction_ids or war.defender_id not in faction_ids:
+                raise ValueError("война ссылается на несуществующую фракцию")
         return self
 
     def evolve(self, **changes: object) -> WorldState:

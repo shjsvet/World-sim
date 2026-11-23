@@ -123,12 +123,23 @@ class SimulationEngine:
                 data["population"] = update.population
             if update.fertility is not None:
                 data["fertility"] = update.fertility
+            if update.happiness is not None:
+                data["happiness"] = update.happiness
+            if update.unrest is not None:
+                data["unrest"] = update.unrest
+            if update.fortification is not None:
+                data["fortification"] = update.fortification
+            if update.army_presence is not None:
+                data["army_presence"] = update.army_presence
             if update.set_owner:
                 data["owner_id"] = update.owner_id
             tiles[update.tile_id] = RegionData.model_validate(data)
 
         world_map = WorldMap(size=state.map.size, tiles=tuple(tiles))
-        return state.evolve(map=world_map)
+        state = state.evolve(map=world_map)
+        if outcome.wars is not None:
+            state = state.evolve(wars=outcome.wars)
+        return state
 
     def _apply_faction_updates(
         self,
