@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import plotly.graph_objects as go
 
 from worldsim.core.faction import Faction
 from worldsim.core.geography import RegionData, ResourceType
 from worldsim.core.state import WorldState
+from worldsim.vcs.commit import Commit
 
 NEUTRAL_COLOR = "#9e9e9e"
 LAYERS: tuple[str, ...] = (
@@ -90,6 +93,78 @@ def tile_layer_figure(state: WorldState, layer: str) -> go.Figure:
         texts=[_tile_hover(state, tile) for tile in tiles],
         title=f"Слой «{layer}», год {state.year}",
     )
+
+
+def timeline_figure(commits: Sequence[Commit]) -> go.Figure:
+    """Строит граф истории: узлы — коммиты, рёбра — родитель → ребёнок.
+
+    Ось X — год коммита, ось Y — ветка; hover показывает сообщение, год,
+    ветку и короткий хеш.
+    """
+    ordered = sorted(
+        commits,
+        key=lambda commit: (commit.year, commit.created_at, commit.id),
+    )
+    branches = sorted({commit.branch for commit in ordered})
+    positions = {name: index for index, name in enumerate(branches)}
+    by_id = {commit.id: commit for commit in ordered}
+
+    edge_x: list[float | None] = []
+    edge_y: list[float | None] = []
+    for commit in ordered:
+        if commit.parent_id is None:
+            continue
+        parent = by_id.get(commit.parent_id)
+        if parent is None:
+            continue
+        edge_x.extend([float(parent.year), float(commit.year), None])
+        edge_y.extend(
+            [
+                float(positions[parent.branch]),
+                float(positions[commit.branch]),
+                None,
+            ]
+        )
+
+    figure = go.Figure()
+    if edge_x:
+        figure.add_trace(
+            go.Scatter(
+                x=edge_x,
+                y=edge_y,
+                mode="lines",
+                line={"color": "#9e9e9e", "width": 2},
+                hoverinfo="skip",
+                name="Родитель → ребёнок",
+            )
+        )
+    figure.add_trace(
+        go.Scatter(
+            x=[float(commit.year) for commit in ordered],
+            y=[float(positions[commit.branch]) for commit in ordered],
+            mode="markers",
+            marker={"size": 12, "color": "#2e7d32"},
+            text=[
+                f"{commit.message}\n{commit.year}, {commit.branch}\n{commit.id[:8]}"
+                for commit in ordered
+            ],
+            hovertemplate="%{text}<extra></extra>",
+            name="Коммиты",
+        )
+    )
+    figure.update_layout(
+        title="История мира",
+        margin={"l": 10, "r": 10, "t": 40, "b": 10},
+        xaxis={"title": "Год", "dtick": 1},
+        yaxis={
+            "tickmode": "array",
+            "tickvals": [float(value) for value in positions.values()],
+            "ticktext": branches,
+            "title": "Ветка",
+        },
+        showlegend=False,
+    )
+    return figure
 
 
 def _scatter_figure(

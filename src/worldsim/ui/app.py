@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 
 import worldsim
@@ -13,7 +15,14 @@ from worldsim.engine.rules import Rule
 from worldsim.engine.rules.population import PopulationGrowthRule
 from worldsim.engine.rules.random_events import FamineRule, PlagueRule
 from worldsim.generator.world import create_world
-from worldsim.ui.figures import LAYERS, tile_layer_figure
+from worldsim.ui.figures import LAYERS, tile_layer_figure, timeline_figure
+from worldsim.ui.history import (
+    checkout_snapshot,
+    commit_world,
+    diff_to_parent,
+    run_alternative,
+)
+from worldsim.vcs.repo import RepositoryError, WorldRepo
 
 _DEFAULT_RULES: list[Rule] = [PlagueRule(), FamineRule(), PopulationGrowthRule()]
 
@@ -37,6 +46,7 @@ def main() -> None:
             config = WorldConfig(seed=int(seed), size=int(size))
             st.session_state["engine"] = build_engine(create_world(config))
         layer = st.selectbox("Слой карты", LAYERS, index=0)
+        repo_dir = st.text_input("Каталог истории", value=".worldsim")
 
     engine: SimulationEngine | None = st.session_state.get("engine", None)
     if engine is None:
@@ -64,6 +74,7 @@ def main() -> None:
 
     _render_factions(state)
     _render_tile_panel(state)
+    _render_history(engine, repo_dir)
     _render_chronicle(engine)
 
 
@@ -128,6 +139,92 @@ def _render_tile_panel(state: WorldState) -> None:
         f"мана {tile.mana_density}/{tile.mana_regeneration}"
         f"{', лей-линия' if tile.ley_line else ''}"
     )
+
+
+def _render_history(engine: SimulationEngine, repo_dir: str) -> None:
+    """Панель истории: коммиты, checkout, ветки и альтернативные реальности."""
+    st.subheader("История версий")
+    repo = WorldRepo(Path(repo_dir))
+    commits = repo.log()
+    selected_id: str | None = None
+
+    if not commits:
+        st.info("Коммитов пока нет — сохраните текущий мир ниже.")
+    else:
+        st.plotly_chart(timeline_figure(commits), use_container_width=True)
+        labels = {
+            commit.id: (f"{commit.year} · {commit.branch} · {commit.id[:8]} — {commit.message}")
+            for commit in commits
+        }
+        selected_id = st.selectbox(
+            "Коммит",
+            list(labels),
+            format_func=lambda commit_id: labels[commit_id],
+        )
+        selected = next(commit for commit in commits if commit.id == selected_id)
+        st.markdown(diff_to_parent(repo, selected).to_markdown())
+
+        st.text_input("Имя новой ветки", value="alt", key="branch_name")
+        columns = st.columns(2)
+        if columns[0].button("Checkout"):
+            state, chronicle = checkout_snapshot(repo, selected.id)
+            st.session_state["engine"] = SimulationEngine(
+                _DEFAULT_RULES,
+                chronicle,
+                initial_state=state,
+            )
+            st.rerun()
+        if columns[1].button("Создать ветку"):
+            try:
+                repo.create_branch(st.session_state["branch_name"], from_ref=selected.id)
+            except RepositoryError as exc:
+                st.error(str(exc))
+            else:
+                st.rerun()
+
+        with st.expander("Создать альтернативную реальность"):
+            aggression = st.slider(
+                "Агрессивность мира",
+                min_value=0.0,
+                max_value=1.0,
+                value=float(engine.state.config.aggression),
+                step=0.05,
+            )
+            years = st.number_input("Лет вперёд", min_value=1, max_value=200, value=50)
+            alt_branch = st.text_input("Ветка", value="alt", key="alt_branch")
+            if st.button("Запустить альтернативу"):
+                try:
+                    commit, diff = run_alternative(
+                        repo,
+                        selected.id,
+                        alt_branch,
+                        aggression=aggression,
+                        years=int(years),
+                        rules=_DEFAULT_RULES,
+                        message=f"alt: агрессия {aggression}",
+                    )
+                except (RepositoryError, ValueError) as exc:
+                    st.error(str(exc))
+                else:
+                    st.success(f"Коммит {commit.id[:8]} в ветке {alt_branch}")
+                    st.markdown(diff.to_markdown())
+                    state, chronicle = repo.checkout_branch(alt_branch)
+                    st.session_state["engine"] = SimulationEngine(
+                        _DEFAULT_RULES,
+                        chronicle,
+                        initial_state=state,
+                    )
+                    st.rerun()
+
+    with st.expander("Закоммитить текущий мир"):
+        message = st.text_input(
+            "Сообщение коммита",
+            value=f"год {engine.state.year}",
+            key="commit_message",
+        )
+        if st.button("Создать коммит"):
+            commit_world(repo, engine.state, engine.chronicle, message)
+            st.rerun()
 
 
 def _render_chronicle(engine: SimulationEngine) -> None:
