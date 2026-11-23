@@ -18,12 +18,14 @@ class TileUpdate:
     Attributes:
         tile_id: Идентификатор тайла.
         population: Новое население; ``None`` — не менять.
+        fertility: Новое плодородие; ``None`` — не менять.
         owner_id: Новый владелец (используется вместе с ``set_owner``).
         set_owner: Явно ли менять владельца (позволяет выставить ``None``).
     """
 
     tile_id: int
     population: int | None = None
+    fertility: float | None = None
     owner_id: int | None = None
     set_owner: bool = False
 

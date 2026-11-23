@@ -117,6 +117,8 @@ class SimulationEngine:
             data = tile.model_dump()
             if update.population is not None:
                 data["population"] = update.population
+            if update.fertility is not None:
+                data["fertility"] = update.fertility
             if update.set_owner:
                 data["owner_id"] = update.owner_id
             tiles[update.tile_id] = RegionData.model_validate(data)
