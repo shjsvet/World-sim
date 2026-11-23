@@ -4,19 +4,102 @@ from __future__ import annotations
 
 import plotly.graph_objects as go
 
+from worldsim.core.faction import Faction
+from worldsim.core.geography import RegionData, ResourceType
 from worldsim.core.state import WorldState
+
+NEUTRAL_COLOR = "#9e9e9e"
+LAYERS: tuple[str, ...] = (
+    "biomes",
+    "political",
+    "resources",
+    "happiness",
+    "unrest",
+    "army",
+    "mana",
+)
+
+_RESOURCE_COLORS: dict[ResourceType, str] = {
+    ResourceType.NONE: NEUTRAL_COLOR,
+    ResourceType.FOOD: "#8bc34a",
+    ResourceType.WOOD: "#6d4c41",
+    ResourceType.IRON: "#78909c",
+    ResourceType.GOLD: "#fbc02d",
+    ResourceType.MANA: "#7e57c2",
+}
 
 
 def biome_figure(state: WorldState) -> go.Figure:
-    """Строит карту биомов текущего снимка мира.
+    """Строит карту биомов текущего снимка мира."""
+    tiles = state.map.tiles
+    return _scatter_figure(
+        state,
+        colors=[tile.biome.color for tile in tiles],
+        texts=[_tile_hover(state, tile) for tile in tiles],
+        title=f"Мир, год {state.year}",
+    )
+
+
+def political_figure(state: WorldState) -> go.Figure:
+    """Строит политическую карту: цвет фракции, нейтральные тайлы серые."""
+    factions = {faction.id: faction for faction in state.factions}
+    tiles = state.map.tiles
+    colors: list[str] = []
+    texts: list[str] = []
+    for tile in tiles:
+        faction = factions.get(tile.owner_id) if tile.owner_id is not None else None
+        if faction is None:
+            colors.append(NEUTRAL_COLOR)
+            texts.append(
+                f"({tile.x}, {tile.y}) нейтральная территория; население {tile.population}"
+            )
+        else:
+            colors.append(faction.color)
+            texts.append(
+                f"({tile.x}, {tile.y}) {faction.name} ({faction.culture}); "
+                f"население {tile.population}; армия {faction.army_size:.0f}; "
+                f"мощь {faction.military_power:.0f}"
+            )
+    return _scatter_figure(
+        state,
+        colors=colors,
+        texts=texts,
+        title=f"Политическая карта, год {state.year}",
+    )
+
+
+def tile_layer_figure(state: WorldState, layer: str) -> go.Figure:
+    """Строит слой карты по выбранному показателю.
 
     Args:
         state: Снимок мира.
+        layer: Один из ``LAYERS``: биомы, политика, ресурсы, счастье,
+            недовольство, армия или мана.
 
-    Returns:
-        Фигура Plotly: один маркер на тайл, цвет — цвет биома, наведение
-        показывает координаты, биом и население.
+    Raises:
+        ValueError: Если слой неизвестен.
     """
+    if layer not in LAYERS:
+        raise ValueError(f"неизвестный слой карты: {layer!r}")
+    tiles = state.map.tiles
+    factions = {faction.id: faction for faction in state.factions}
+    colors = [_layer_color(tile, layer, factions) for tile in tiles]
+    return _scatter_figure(
+        state,
+        colors=colors,
+        texts=[_tile_hover(state, tile) for tile in tiles],
+        title=f"Слой «{layer}», год {state.year}",
+    )
+
+
+def _scatter_figure(
+    state: WorldState,
+    *,
+    colors: list[str],
+    texts: list[str],
+    title: str,
+) -> go.Figure:
+    """Собирает фигуру из точек с заданными цветами и подсказками."""
     tiles = state.map.tiles
     figure = go.Figure(
         data=[
@@ -25,22 +108,80 @@ def biome_figure(state: WorldState) -> go.Figure:
                 y=[tile.y for tile in tiles],
                 mode="markers",
                 marker={
-                    "color": [tile.biome.color for tile in tiles],
+                    "color": colors,
                     "size": 12,
                     "symbol": "square",
                     "line": {"width": 0},
                 },
-                text=[f"{tile.biome.value}, население {tile.population}" for tile in tiles],
-                hovertemplate="(%{x}, %{y})<br>%{text}<extra></extra>",
+                text=texts,
+                hovertemplate="%{text}<extra></extra>",
                 name="Тайлы",
             )
         ]
     )
     figure.update_layout(
-        title=f"Мир, год {state.year}",
+        title=title,
         margin={"l": 10, "r": 10, "t": 40, "b": 10},
         showlegend=False,
         xaxis={"visible": False},
         yaxis={"visible": False, "autorange": "reversed"},
     )
     return figure
+
+
+def _layer_color(tile: RegionData, layer: str, factions: dict[int, Faction]) -> str:
+    """Возвращает цвет тайла для выбранного слоя."""
+    if layer == "biomes":
+        return tile.biome.color
+    if layer == "political":
+        faction = factions.get(tile.owner_id) if tile.owner_id is not None else None
+        return faction.color if faction is not None else NEUTRAL_COLOR
+    if layer == "resources":
+        return _RESOURCE_COLORS[tile.resource_type]
+    if layer == "happiness":
+        return _lerp_color("#d32f2f", "#2e7d32", tile.happiness / 100.0)
+    if layer == "unrest":
+        return _lerp_color("#e0e0e0", "#b71c1c", tile.unrest / 100.0)
+    if layer == "army":
+        return _lerp_color("#ffe0b2", "#bf360c", min(1.0, tile.army_presence / 20.0))
+    if tile.ley_line:
+        return "#00e5ff"
+    return _lerp_color("#e3f2fd", "#4a148c", tile.mana_density / 100.0)
+
+
+def _tile_hover(state: WorldState, tile: RegionData) -> str:
+    """Собирает подробную подсказку тайла."""
+    factions = {faction.id: faction for faction in state.factions}
+    faction = factions.get(tile.owner_id) if tile.owner_id is not None else None
+    owner = f"{faction.name} ({faction.culture})" if faction is not None else "нейтраль"
+    river = "да" if tile.has_river else "нет"
+    ley = ", лей-линия" if tile.ley_line else ""
+    return (
+        f"({tile.x}, {tile.y}) {tile.biome.value}; владелец: {owner}; "
+        f"население {tile.population}/{tile.population_capacity}; "
+        f"плодородие {tile.fertility:.0f}; высота {tile.elevation:.0f}; река: {river}; "
+        f"ресурс: {tile.resource_type.value} ({tile.resource_amount:.0f}), "
+        f"запас {tile.resource_depletion:.0f}; инфраструктура {tile.infrastructure:.0f}; "
+        f"счастье {tile.happiness:.0f}; урбанизация {tile.urbanization:.0f}; "
+        f"армия {tile.army_presence}; фортификация {tile.fortification:.0f}; "
+        f"недовольство {tile.unrest:.0f}; "
+        f"мана {tile.mana_density}/{tile.mana_regeneration}{ley}"
+    )
+
+
+def _lerp_color(start: str, end: str, ratio: float) -> str:
+    """Линейно смешивает два hex-цвета."""
+    ratio = max(0.0, min(1.0, ratio))
+    start_rgb = _parse_hex(start)
+    end_rgb = _parse_hex(end)
+    mixed = tuple(
+        round(first + (second - first) * ratio)
+        for first, second in zip(start_rgb, end_rgb, strict=True)
+    )
+    return "#{:02x}{:02x}{:02x}".format(*mixed)
+
+
+def _parse_hex(color: str) -> tuple[int, int, int]:
+    """Разбирает ``#RRGGBB`` в три компоненты."""
+    value = color.lstrip("#")
+    return int(value[0:2], 16), int(value[2:4], 16), int(value[4:6], 16)
