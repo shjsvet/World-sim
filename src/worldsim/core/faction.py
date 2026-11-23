@@ -36,6 +36,11 @@ class Ideology(StrEnum):
         """Множитель боевой мощи."""
         return _MILITARY_MULTIPLIER[self]
 
+    @property
+    def tech_bonus(self) -> float:
+        """Бонус к скорости технологического роста."""
+        return _TECH_BONUS[self]
+
 
 class MagicSchool(StrEnum):
     """Магические школы фракции."""
@@ -172,4 +177,13 @@ _MILITARY_MULTIPLIER: dict[Ideology, float] = {
     Ideology.THEOCRATIC: 1.05,
     Ideology.SCHOLARLY: 0.95,
     Ideology.NOMADIC: 1.10,
+}
+
+_TECH_BONUS: dict[Ideology, float] = {
+    Ideology.MILITARIST: 0.0,
+    Ideology.MERCANTILE: 0.25,
+    Ideology.AGRARIAN: 0.0,
+    Ideology.THEOCRATIC: 0.10,
+    Ideology.SCHOLARLY: 0.50,
+    Ideology.NOMADIC: -0.10,
 }

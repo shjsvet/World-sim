@@ -125,12 +125,14 @@ def test_ley_lines_are_rare_and_powerful() -> None:
 
 
 @pytest.mark.slow
-def test_generation_performance() -> None:
-    """Карта 128×128 генерируется быстрее двух секунд."""
+def test_generation_performance(request: pytest.FixtureRequest) -> None:
+    """Карта 128×128 генерируется быстрее двух секунд (без coverage)."""
+    if getattr(request.config.option, "cov_source", None):
+        pytest.skip("coverage замедляет генерацию: замер выполняется без --cov")
     config = make_config(size=128)
 
     started = time.perf_counter()
-    create_world(config)
+    generate_map(config, Rng(config.seed))
     elapsed = time.perf_counter() - started
 
     assert elapsed < 2.0
