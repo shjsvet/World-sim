@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from worldsim.core.chronicle import Chronicle
 from worldsim.core.state import WorldState
 from worldsim.vcs.commit import Commit
+from worldsim.vcs.diff import Diff, compute_diff
 from worldsim.vcs.snapshot import Snapshot
 
 
@@ -370,6 +371,13 @@ class WorldRepo:
             return self._read_commit(self._resolve("HEAD"))
         except RepositoryError:
             return None
+
+    def diff(self, from_ref: str, to_ref: str) -> Diff:
+        """Сравнивает два снимка репозитория по тайлам, фракциям и летописи."""
+        self.init()
+        _, from_state, from_chronicle = self._read_payload(self._resolve(from_ref))
+        _, to_state, to_chronicle = self._read_payload(self._resolve(to_ref))
+        return compute_diff(from_state, from_chronicle, to_state, to_chronicle)
 
     def create_branch(self, name: str, from_ref: str = "HEAD") -> str:
         """Создаёт ветку от ссылки и возвращает идентификатор коммита.
