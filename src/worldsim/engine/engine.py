@@ -110,6 +110,8 @@ class SimulationEngine:
         """Применяет изменения правила к снимку мира."""
         if outcome.faction_updates:
             state = self._apply_faction_updates(state, outcome.faction_updates)
+        if outcome.wars is not None:
+            state = state.evolve(wars=outcome.wars)
         if not outcome.tile_updates:
             return state
 
@@ -136,10 +138,7 @@ class SimulationEngine:
             tiles[update.tile_id] = RegionData.model_validate(data)
 
         world_map = WorldMap(size=state.map.size, tiles=tuple(tiles))
-        state = state.evolve(map=world_map)
-        if outcome.wars is not None:
-            state = state.evolve(wars=outcome.wars)
-        return state
+        return state.evolve(map=world_map)
 
     def _apply_faction_updates(
         self,
