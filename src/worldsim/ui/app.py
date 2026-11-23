@@ -7,6 +7,8 @@ from pathlib import Path
 import streamlit as st
 
 import worldsim
+from worldsim.ai.chronicler import fallback_chapter, save_chapter
+from worldsim.ai.client import AIUnavailableError
 from worldsim.core.chronicle import Chronicle
 from worldsim.core.state import WorldConfig, WorldState
 from worldsim.engine.engine import SimulationEngine
@@ -15,6 +17,12 @@ from worldsim.engine.rules import Rule
 from worldsim.engine.rules.population import PopulationGrowthRule
 from worldsim.engine.rules.random_events import FamineRule, PlagueRule
 from worldsim.generator.world import create_world
+from worldsim.ui.ai_panel import (
+    create_ai_world,
+    manual_config,
+    safe_client,
+    write_chapter_for_engine,
+)
 from worldsim.ui.figures import LAYERS, tile_layer_figure, timeline_figure
 from worldsim.ui.history import (
     checkout_snapshot,
@@ -53,29 +61,129 @@ def main() -> None:
         st.info("Сгенерируйте мир в панели слева, чтобы начать симуляцию.")
         return
 
-    left, right = st.columns(2)
-    with left:
-        step_one = st.button("Следующий год")
-    with right:
-        step_ten = st.button("+10 лет")
-    if step_one:
-        engine.step()
-    if step_ten:
-        engine.run(10)
+    world_tab, history_tab, ai_tab = st.tabs(["Мир", "История", "ИИ"])
 
-    state = engine.state
-    st.plotly_chart(tile_layer_figure(state, layer), use_container_width=True)
+    with world_tab:
+        left, right = st.columns(2)
+        with left:
+            step_one = st.button("Следующий год")
+        with right:
+            step_ten = st.button("+10 лет")
+        if step_one:
+            engine.step()
+        if step_ten:
+            engine.run(10)
 
-    population = sum(tile.population for tile in state.map.tiles)
-    metrics = st.columns(3)
-    metrics[0].metric("Год", state.year)
-    metrics[1].metric("Население", population)
-    metrics[2].metric("Событий", len(engine.chronicle))
+        state = engine.state
+        st.plotly_chart(tile_layer_figure(state, layer), use_container_width=True)
 
-    _render_factions(state)
-    _render_tile_panel(state)
-    _render_history(engine, repo_dir)
-    _render_chronicle(engine)
+        population = sum(tile.population for tile in state.map.tiles)
+        metrics = st.columns(3)
+        metrics[0].metric("Год", state.year)
+        metrics[1].metric("Население", population)
+        metrics[2].metric("Событий", len(engine.chronicle))
+
+        _render_factions(state)
+        _render_tile_panel(state)
+        _render_chronicle(engine)
+
+    with history_tab:
+        _render_history(engine, repo_dir)
+
+    with ai_tab:
+        _render_ai(engine)
+
+
+def _render_ai(engine: SimulationEngine) -> None:
+    """Вкладка ИИ: генерация мира по описанию и глава летописи."""
+    st.subheader("Мир по описанию")
+    description = st.text_area(
+        "Описание мира",
+        value="Мир двух фракций: северные милитаристы и южные торговцы.",
+        height=120,
+    )
+    config = engine.state.config
+    fallback = manual_config(
+        seed=config.seed,
+        size=config.size,
+        initial_factions=config.initial_factions,
+        aggression=config.aggression,
+        growth_rate=config.growth_rate,
+        plague_chance=config.plague_chance,
+        magic_level=config.magic_level,
+    )
+    with st.expander("Ручная конфигурация (fallback)"):
+        st.json(fallback.model_dump())
+
+    if st.button("Создать мир по описанию"):
+        client, error = safe_client()
+        if client is None:
+            st.warning(f"ИИ недоступен: {error}. Использую ручную конфигурацию.")
+            st.session_state["engine"] = build_engine(create_world(fallback))
+            st.rerun()
+        else:
+            with st.spinner("ИИ проектирует мир..."):
+                try:
+                    world, _blueprint, path = create_ai_world(description, client)
+                except AIUnavailableError as exc:
+                    st.error(f"Не удалось создать мир: {exc}")
+                else:
+                    st.session_state["engine"] = build_engine(world)
+                    st.success(f"Мир создан, черновик сохранён: {path}")
+                    st.rerun()
+
+    st.divider()
+    st.subheader("Глава летописи")
+    max_year = max(0, engine.state.year)
+    columns = st.columns(2)
+    with columns[0]:
+        year_from = st.number_input("С года", min_value=0, max_value=max_year, value=0)
+    with columns[1]:
+        year_to = st.number_input("По год", min_value=0, max_value=max_year, value=max_year)
+    directory = st.text_input("Каталог глав", value="chronicle")
+
+    if st.button("Написать главу"):
+        client, error = safe_client()
+        if client is None:
+            st.warning(f"ИИ недоступен: {error}. Сохраняю fallback-главу.")
+            events = engine.chronicle.between(int(year_from), int(year_to))
+            text = fallback_chapter(events, int(year_from), int(year_to))
+            path = save_chapter(
+                Path(directory),
+                text,
+                year_from=int(year_from),
+                year_to=int(year_to),
+                seed=engine.state.config.seed,
+            )
+            st.session_state["chapter_text"] = text
+            st.session_state["chapter_path"] = str(path)
+        else:
+            with st.spinner("Хронист пишет главу..."):
+                try:
+                    path = write_chapter_for_engine(
+                        engine,
+                        client,
+                        int(year_from),
+                        int(year_to),
+                        directory=Path(directory),
+                        seed=engine.state.config.seed,
+                    )
+                except AIUnavailableError as exc:
+                    st.error(f"Не удалось написать главу: {exc}")
+                else:
+                    st.session_state["chapter_text"] = path.read_text(encoding="utf-8")
+                    st.session_state["chapter_path"] = str(path)
+                    st.success(f"Глава сохранена: {path}")
+
+    chapter_text = st.session_state.get("chapter_text")
+    if isinstance(chapter_text, str):
+        st.markdown(chapter_text)
+        chapter_path = Path(st.session_state["chapter_path"])
+        st.download_button(
+            "Скачать главу .md",
+            data=chapter_text,
+            file_name=chapter_path.name,
+        )
 
 
 def _render_factions(state: WorldState) -> None:
