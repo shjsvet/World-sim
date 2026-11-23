@@ -7,11 +7,14 @@ from pathlib import Path
 import pytest
 
 from worldsim.core.chronicle import Chronicle
+from worldsim.core.events import Event
 from worldsim.core.state import WorldConfig, WorldState
 from worldsim.engine.engine import SimulationEngine
 from worldsim.engine.rules.population import PopulationGrowthRule
 from worldsim.generator.world import create_world
 from worldsim.vcs.repo import RepositoryError, WorldRepo
+
+pytestmark = pytest.mark.integration
 
 
 def make_world(seed: int = 1, size: int = 16, factions: int = 1) -> WorldState:
@@ -188,3 +191,99 @@ def test_log_shows_fork(tmp_path: Path) -> None:
     assert main_log[-1] == first
     assert feature_log == [feature_commit, first]
     assert main_log[0].id != feature_log[0].id
+
+
+def test_three_branches_and_two_forks(tmp_path: Path) -> None:
+    """Полный сценарий: три ветки и две развилки."""
+    repo = WorldRepo(tmp_path)
+    base = repo.commit(make_world(seed=1).evolve(year=0), "основа")
+
+    repo.create_branch("feature", from_ref=base.id)
+    repo.checkout_branch("feature")
+    feature = repo.commit(make_world(seed=2).evolve(year=1), "фича", branch="feature")
+
+    repo.checkout_branch("main")
+    main = repo.commit(make_world(seed=3).evolve(year=2), "основа+", branch="main")
+
+    repo.create_branch("alt", from_ref=feature.id)
+    repo.checkout_branch("alt")
+    alt = repo.commit(make_world(seed=4).evolve(year=3), "альтернатива", branch="alt")
+
+    assert set(repo.list_branches()) == {"main", "feature", "alt"}
+    assert repo.list_branches()["main"] == main.id
+    assert repo.log("main") == [main, base]
+    assert repo.log("feature") == [feature, base]
+    assert repo.log("alt") == [alt, feature, base]
+    assert alt.parent_id == feature.id
+
+
+def test_commit_after_checkout_of_old_commit(tmp_path: Path) -> None:
+    """После checkout старого коммита можно ветвиться от него."""
+    repo = WorldRepo(tmp_path)
+    base = repo.commit(make_world(seed=1).evolve(year=0), "основа")
+    main = repo.commit(make_world(seed=2).evolve(year=1), "основная", branch="main")
+
+    repo.checkout(base.id)
+    repo.create_branch("hotfix")
+    repo.checkout_branch("hotfix")
+    fix = repo.commit(make_world(seed=3).evolve(year=2), "hotfix", branch="hotfix")
+
+    assert fix.parent_id == base.id
+    assert repo.list_branches()["main"] == main.id
+    assert repo.log("hotfix") == [fix, base]
+
+
+def test_main_branch_stays_unchanged(tmp_path: Path) -> None:
+    """Коммиты в других ветках не двигают основную."""
+    repo = WorldRepo(tmp_path)
+    base = repo.commit(make_world(seed=1).evolve(year=0), "основа")
+    repo.create_branch("feature", from_ref=base.id)
+    repo.checkout_branch("feature")
+    repo.commit(make_world(seed=2), "фича", branch="feature")
+    repo.create_branch("alt", from_ref=base.id)
+    repo.checkout_branch("alt")
+    repo.commit(make_world(seed=3), "альтернатива", branch="alt")
+
+    assert repo.list_branches()["main"] == base.id
+    assert repo.log("main") == [base]
+    repo.checkout_branch("main")
+    restored, _ = repo.checkout("main")
+    assert restored.snapshot_hash() == base.snapshot_hash
+
+
+def test_checkout_restores_state_and_chronicle_exactly(tmp_path: Path) -> None:
+    """Свойство: checkout возвращает тот же снимок и ту же летопись."""
+    repo = WorldRepo(tmp_path)
+    chronicles: dict[str, Chronicle] = {}
+    commits = []
+    for year in range(3):
+        chronicle = Chronicle()
+        chronicle.add(Event.expansion(year=year, faction_id=0, tile_id=year))
+        commit = repo.commit(
+            make_world(seed=1).evolve(year=year),
+            f"год {year}",
+            chronicle=chronicle,
+        )
+        commits.append(commit)
+        chronicles[commit.id] = chronicle
+
+    for commit in commits:
+        state, chronicle = repo.checkout(commit.id)
+        assert state.snapshot_hash() == commit.snapshot_hash
+        assert chronicle.to_json() == chronicles[commit.id].to_json()
+
+
+def test_damaged_object_can_be_restored(tmp_path: Path) -> None:
+    """Повреждённый объект даёт ошибку, после восстановления файла — работает."""
+    repo = WorldRepo(tmp_path)
+    commit = repo.commit(make_world(seed=1), "мир")
+    object_path = repo.objects_dir / f"{commit.id}.json"
+    original = object_path.read_text(encoding="utf-8")
+
+    object_path.write_text("{ это не json", encoding="utf-8")
+    with pytest.raises(RepositoryError):
+        repo.checkout(commit.id)
+
+    object_path.write_text(original, encoding="utf-8")
+    restored, _ = repo.checkout(commit.id)
+    assert restored.snapshot_hash() == commit.snapshot_hash
