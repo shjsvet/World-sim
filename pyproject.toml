@@ -17,7 +17,7 @@ classifiers = [
     "Framework :: Streamlit",
 ]
 dependencies = [
-    "pydantic>=2.7",
+    "pydantic>=2.7,<3",
     "streamlit>=1.35",
     "plotly>=5.22",
 ]
