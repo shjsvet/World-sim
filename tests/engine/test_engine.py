@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from worldsim.core.chronicle import Chronicle
 from worldsim.core.events import EventType
+from worldsim.core.faction import Faction, Ideology
 from worldsim.core.geography import Biome, RegionData, WorldMap
 from worldsim.core.state import WorldConfig, WorldState
 from worldsim.engine.engine import SimulationEngine
@@ -22,6 +23,8 @@ def make_state(
     fertility: float = 50.0,
     biome: Biome = Biome.PLAINS,
     growth_rate: float = 0.02,
+    factions: tuple[Faction, ...] = (),
+    owner_id: int | None = None,
 ) -> WorldState:
     """Создаёт однородный мир для тестов движка."""
     tiles = tuple(
@@ -34,11 +37,29 @@ def make_state(
             elevation=100.0,
             population=population,
             population_capacity=capacity,
+            owner_id=owner_id,
         )
         for index in range(size * size)
     )
     config = WorldConfig(seed=42, size=size, growth_rate=growth_rate)
-    return WorldState(config=config, year=0, map=WorldMap(size=size, tiles=tiles))
+    return WorldState(
+        config=config,
+        year=0,
+        map=WorldMap(size=size, tiles=tiles),
+        factions=factions,
+    )
+
+
+def make_faction(faction_id: int = 0) -> Faction:
+    """Создаёт фракцию для тестов движка."""
+    return Faction(
+        id=faction_id,
+        name="Альянс",
+        color="#112233",
+        ideology=Ideology.MILITARIST,
+        culture="Люди",
+        capital_tile_id=0,
+    )
 
 
 class RecordingRule:
@@ -61,7 +82,7 @@ class FactionTouchingRule:
     priority = 1
 
     def apply(self, state: WorldState, ctx: StepContext) -> RuleOutcome:
-        return RuleOutcome(faction_updates=(FactionUpdate(faction_id=1, changes={"morale": 0.5}),))
+        return RuleOutcome(faction_updates=(FactionUpdate(faction_id=0, changes={"morale": 0.5}),))
 
 
 def test_step_increments_year_and_grows_population() -> None:
@@ -205,15 +226,31 @@ def test_overpopulation_emits_famine_and_caps_population() -> None:
     assert events[0].year == 0
 
 
-def test_faction_updates_are_not_supported_yet() -> None:
-    """Обновления фракций пока не поддерживаются движком."""
-    engine = SimulationEngine(
-        [FactionTouchingRule()],
-        Chronicle(),
-        initial_state=make_state(),
-    )
+def test_faction_updates_are_applied() -> None:
+    """Движок применяет изменения фракций."""
+    faction = make_faction()
+    initial = make_state(factions=(faction,), owner_id=faction.id)
+    engine = SimulationEngine([FactionTouchingRule()], Chronicle(), initial_state=initial)
 
-    with pytest.raises(NotImplementedError):
+    updated = engine.step()
+
+    assert updated.factions[0].morale == 0.5
+    assert initial.factions[0].morale == 0.8
+
+
+def test_unknown_faction_update_is_rejected() -> None:
+    """Обновление несуществующей фракции отклоняется."""
+
+    class UnknownFactionRule:
+        name = "unknown"
+        priority = 1
+
+        def apply(self, state: WorldState, ctx: StepContext) -> RuleOutcome:
+            return RuleOutcome(faction_updates=(FactionUpdate(faction_id=99, changes={}),))
+
+    engine = SimulationEngine([UnknownFactionRule()], Chronicle(), initial_state=make_state())
+
+    with pytest.raises(ValueError, match="отсутствует"):
         engine.step()
 
 

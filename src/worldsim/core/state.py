@@ -6,8 +6,9 @@ import hashlib
 import json
 from typing import Self
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from worldsim.core.faction import Faction
 from worldsim.core.geography import WorldMap
 
 
@@ -31,6 +32,17 @@ class WorldState(BaseModel):
     Каждый шаг симуляции создаёт новый снимок через :meth:`evolve`; исходный
     объект не меняется. ``snapshot_hash`` зависит только от содержимого
     снимка, поэтому одинаковый мир и сид дают одинаковый хеш в любом процессе.
+
+    Инварианты: идентификаторы, имена и цвета фракций уникальны; каждый
+    ``owner_id`` ссылается на существующую фракцию; вода не имеет владельца и
+    армии; армия может стоять только в чужом или своём владении; столица
+    фракции принадлежит ей.
+
+    Attributes:
+        config: Параметры мира.
+        year: Текущий год.
+        map: Сетка тайлов.
+        factions: Фракции мира.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -38,6 +50,40 @@ class WorldState(BaseModel):
     config: WorldConfig
     year: int = Field(ge=0)
     map: WorldMap
+    factions: tuple[Faction, ...] = ()
+
+    @model_validator(mode="after")
+    def _validate_factions(self) -> Self:
+        """Проверяет согласованность фракций и владения тайлами."""
+        if len({faction.id for faction in self.factions}) != len(self.factions):
+            raise ValueError("идентификаторы фракций должны быть уникальны")
+        if len({faction.name for faction in self.factions}) != len(self.factions):
+            raise ValueError("имена фракций должны быть уникальны")
+        if len({faction.color for faction in self.factions}) != len(self.factions):
+            raise ValueError("цвета фракций должны быть уникальны")
+
+        faction_ids = {faction.id for faction in self.factions}
+        for tile in self.map.tiles:
+            if tile.biome.is_water:
+                if tile.owner_id is not None:
+                    raise ValueError(f"водный тайл {tile.id} не может принадлежать фракции")
+                if tile.army_presence > 0:
+                    raise ValueError(f"на водном тайле {tile.id} не может быть армии")
+                continue
+            if tile.owner_id is not None and tile.owner_id not in faction_ids:
+                raise ValueError(f"тайл {tile.id} принадлежит несуществующей фракции")
+            if tile.army_presence > 0 and tile.owner_id is None:
+                raise ValueError(f"на нейтральном тайле {tile.id} не может быть армии")
+
+        for faction in self.factions:
+            if faction.capital_tile_id is None:
+                continue
+            if not 0 <= faction.capital_tile_id < len(self.map.tiles):
+                raise ValueError(f"столица фракции {faction.id} вне карты")
+            capital = self.map.by_id(faction.capital_tile_id)
+            if capital.owner_id != faction.id:
+                raise ValueError(f"столица фракции {faction.id} не принадлежит ей")
+        return self
 
     def evolve(self, **changes: object) -> WorldState:
         """Создаёт новый провалидированный снимок с изменениями.

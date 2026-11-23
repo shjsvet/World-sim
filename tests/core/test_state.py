@@ -8,32 +8,71 @@ import sys
 import pytest
 from pydantic import ValidationError
 
+from worldsim.core.faction import Faction, Ideology
 from worldsim.core.geography import Biome, RegionData, WorldMap
 from worldsim.core.state import WorldConfig, WorldState
 
 
-def make_map(size: int = 4, population: int = 10) -> WorldMap:
+def make_map(
+    size: int = 4,
+    population: int = 10,
+    owner_id: int | None = None,
+    army_presence: int = 0,
+    biome: Biome = Biome.PLAINS,
+) -> WorldMap:
     """Создаёт квадратную карту с однородными тайлами."""
     tiles = tuple(
         RegionData(
             id=index,
             x=index % size,
             y=index // size,
-            biome=Biome.PLAINS,
+            biome=biome,
             fertility=50.0,
             elevation=100.0,
             population=population,
             population_capacity=100,
+            owner_id=owner_id,
+            army_presence=army_presence,
         )
         for index in range(size * size)
     )
     return WorldMap(size=size, tiles=tiles)
 
 
-def make_state(**config_overrides: object) -> WorldState:
+def make_state(
+    factions: tuple[Faction, ...] = (),
+    owner_id: int | None = None,
+    army_presence: int = 0,
+    biome: Biome = Biome.PLAINS,
+    **config_overrides: object,
+) -> WorldState:
     """Создаёт снимок мира на нулевом году."""
     config = WorldConfig.model_validate({"seed": 42, "size": 4, **config_overrides})
-    return WorldState(config=config, year=0, map=make_map(config.size))
+    world_map = make_map(
+        config.size,
+        owner_id=owner_id,
+        army_presence=army_presence,
+        biome=biome,
+    )
+    return WorldState(config=config, year=0, map=world_map, factions=factions)
+
+
+def make_faction(
+    faction_id: int = 0,
+    name: str = "Альянс",
+    color: str = "#112233",
+    capital_tile_id: int | None = 0,
+    culture: str = "Люди",
+) -> Faction:
+    """Создаёт фракцию для проверки инвариантов мира."""
+    return Faction(
+        id=faction_id,
+        name=name,
+        color=color,
+        ideology=Ideology.MILITARIST,
+        culture=culture,
+        capital_tile_id=capital_tile_id,
+    )
 
 
 def test_config_defaults() -> None:
@@ -166,3 +205,105 @@ def test_snapshot_hash_is_stable_across_processes() -> None:
     )
 
     assert result.stdout.strip() == state.snapshot_hash()
+
+
+def test_state_accepts_factions_and_ownership() -> None:
+    """Снимок принимает фракции и принадлежащие им тайлы."""
+    faction = make_faction()
+    state = make_state(factions=(faction,), owner_id=faction.id)
+
+    assert state.factions == (faction,)
+    assert all(tile.owner_id == faction.id for tile in state.map.tiles)
+
+
+def test_duplicate_faction_ids_are_rejected() -> None:
+    """Идентификаторы фракций уникальны."""
+    first = make_faction()
+    second = make_faction(name="Орда", color="#445566", capital_tile_id=None)
+
+    with pytest.raises(ValidationError, match="уникальны"):
+        make_state(factions=(first, second))
+
+
+def test_duplicate_faction_names_are_rejected() -> None:
+    """Имена фракций уникальны."""
+    first = make_faction()
+    second = make_faction(faction_id=1, color="#445566", capital_tile_id=None)
+
+    with pytest.raises(ValidationError, match="имена"):
+        make_state(factions=(first, second))
+
+
+def test_duplicate_faction_colors_are_rejected() -> None:
+    """Цвета фракций уникальны."""
+    first = make_faction()
+    second = make_faction(faction_id=1, name="Орда", capital_tile_id=None)
+
+    with pytest.raises(ValidationError, match="цвета"):
+        make_state(factions=(first, second))
+
+
+def test_unknown_owner_is_rejected() -> None:
+    """Тайл не может принадлежать несуществующей фракции."""
+    with pytest.raises(ValidationError, match="несуществующей"):
+        make_state(factions=(make_faction(),), owner_id=5)
+
+
+def test_water_cannot_have_owner() -> None:
+    """Вода не может принадлежать фракции."""
+    faction = make_faction(capital_tile_id=None)
+
+    with pytest.raises(ValidationError, match="водный"):
+        make_state(factions=(faction,), owner_id=faction.id, biome=Biome.OCEAN)
+
+
+def test_water_cannot_have_army() -> None:
+    """На воде не может стоять армия."""
+    with pytest.raises(ValidationError, match="армии"):
+        make_state(biome=Biome.OCEAN, army_presence=5)
+
+
+def test_army_requires_owner() -> None:
+    """На нейтральном тайле армии быть не может."""
+    with pytest.raises(ValidationError, match="нейтральном"):
+        make_state(army_presence=5)
+
+
+def test_capital_must_belong_to_faction() -> None:
+    """Столица фракции должна принадлежать ей."""
+    with pytest.raises(ValidationError, match="столица"):
+        make_state(factions=(make_faction(),), owner_id=None)
+
+
+def test_capital_outside_map_is_rejected() -> None:
+    """Столица не может находиться вне карты."""
+    faction = make_faction(capital_tile_id=999)
+
+    with pytest.raises(ValidationError, match="вне карты"):
+        make_state(factions=(faction,), owner_id=faction.id)
+
+
+def test_snapshot_hash_includes_factions() -> None:
+    """Хеш снимка учитывает фракции и владение."""
+    plain = make_state()
+    with_faction = make_state(factions=(make_faction(),), owner_id=0)
+
+    assert plain.snapshot_hash() != with_faction.snapshot_hash()
+
+
+def test_backward_compatible_json_without_factions() -> None:
+    """Старый JSON без фракций и owner_id читается со значениями по умолчанию."""
+    faction = make_faction()
+    state = make_state(factions=(faction,), owner_id=faction.id)
+
+    payload = state.model_dump()
+    payload.pop("factions")
+    for tile in payload["map"]["tiles"]:
+        tile.pop("owner_id", None)
+        tile.pop("army_presence", None)
+
+    restored = WorldState.model_validate(payload)
+
+    assert restored.factions == ()
+    assert restored.map.tiles[0].owner_id is None
+    assert restored.map.tiles[0].army_presence == 0

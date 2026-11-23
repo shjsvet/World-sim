@@ -9,7 +9,7 @@ from worldsim.core.events import Event
 from worldsim.core.geography import RegionData, WorldMap
 from worldsim.core.rng import Rng
 from worldsim.core.state import WorldState
-from worldsim.engine.rules import Rule, RuleOutcome, StepContext
+from worldsim.engine.rules import FactionUpdate, Rule, RuleOutcome, StepContext
 
 
 class SimulationEngine:
@@ -103,9 +103,7 @@ class SimulationEngine:
     def _apply(self, state: WorldState, outcome: RuleOutcome) -> WorldState:
         """Применяет изменения правила к снимку мира."""
         if outcome.faction_updates:
-            raise NotImplementedError(
-                "обновления фракций появятся в T17 вместе с WorldState.factions"
-            )
+            state = self._apply_faction_updates(state, outcome.faction_updates)
         if not outcome.tile_updates:
             return state
 
@@ -125,6 +123,21 @@ class SimulationEngine:
 
         world_map = WorldMap(size=state.map.size, tiles=tuple(tiles))
         return state.evolve(map=world_map)
+
+    def _apply_faction_updates(
+        self,
+        state: WorldState,
+        updates: tuple[FactionUpdate, ...],
+    ) -> WorldState:
+        """Применяет изменения фракций через ``Faction.evolve``."""
+        factions = list(state.factions)
+        positions = {faction.id: index for index, faction in enumerate(factions)}
+        for update in updates:
+            position = positions.get(update.faction_id)
+            if position is None:
+                raise ValueError(f"фракция #{update.faction_id} отсутствует в снимке")
+            factions[position] = factions[position].evolve(**dict(update.changes))
+        return state.evolve(factions=tuple(factions))
 
     def _add_event(self, event: Event) -> None:
         """Добавляет событие в летопись, выдавая уникальный идентификатор."""
