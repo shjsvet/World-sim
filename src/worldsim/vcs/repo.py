@@ -1,11 +1,19 @@
-"""Репозиторий версий мира в памяти (git-подобная модель)."""
+"""Репозитории версий мира: in-memory и файловый ``.worldsim/``."""
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 
+from pydantic import ValidationError
+
+from worldsim.core.chronicle import Chronicle
 from worldsim.core.state import WorldState
+from worldsim.vcs.commit import Commit
 from worldsim.vcs.snapshot import Snapshot
 
 
@@ -138,3 +146,217 @@ class Repository:
         if self._head_branch is None:
             return None
         return self._branches.get(self._head_branch)
+
+
+class RepositoryError(Exception):
+    """Ошибка чтения или адресации файлового репозитория."""
+
+
+def compute_commit_id(
+    parent_id: str | None,
+    year: int,
+    message: str,
+    snapshot_hash: str,
+) -> str:
+    """Считает идентификатор коммита по родителю, году, сообщению и снимку."""
+    payload = f"{parent_id or ''}|{year}|{message}|{snapshot_hash}"
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+class WorldRepo:
+    """Файловый репозиторий версий в каталоге ``.worldsim/``.
+
+    Раскладка:
+    ``objects/<commit_id>.json`` — метаданные коммита, снимок и летопись;
+    ``refs/branches/<name>`` — идентификатор коммита ветки;
+    ``HEAD`` — текущая ветка или идентификатор коммита.
+
+    Запись выполняется атомарно: временный файл рядом с целевым и
+    ``os.replace``. Повреждённые объекты дают ``RepositoryError``.
+    """
+
+    def __init__(self, root: Path, chronicle: Chronicle | None = None) -> None:
+        self.root = Path(root)
+        self.meta_dir = self.root / ".worldsim"
+        self.objects_dir = self.meta_dir / "objects"
+        self.refs_dir = self.meta_dir / "refs" / "branches"
+        self.head_path = self.meta_dir / "HEAD"
+        self._chronicle = chronicle
+
+    def init(self) -> None:
+        """Создаёт структуру каталогов и ``HEAD`` (идемпотентно)."""
+        self.objects_dir.mkdir(parents=True, exist_ok=True)
+        self.refs_dir.mkdir(parents=True, exist_ok=True)
+        if not self.head_path.exists():
+            self._write_atomic(self.head_path, "main")
+
+    def _write_atomic(self, path: Path, data: str) -> None:
+        """Пишет файл через временный и ``os.replace``."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        text = data if data.endswith("\n") else data + "\n"
+        temp = path.with_name(path.name + ".tmp")
+        temp.write_text(text, encoding="utf-8")
+        os.replace(temp, path)
+
+    def _read_text(self, path: Path) -> str:
+        """Читает текстовый файл репозитория."""
+        try:
+            return path.read_text(encoding="utf-8").strip()
+        except OSError as exc:
+            raise RepositoryError(f"не удалось прочитать {path}") from exc
+
+    def _read_json(self, path: Path) -> dict[str, object]:
+        """Читает JSON-объект, превращая повреждения в ``RepositoryError``."""
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except FileNotFoundError as exc:
+            raise RepositoryError(f"объект не найден: {path.stem}") from exc
+        except OSError as exc:
+            raise RepositoryError(f"не удалось прочитать {path}") from exc
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise RepositoryError(f"повреждённый JSON: {path.name}") from exc
+        if not isinstance(data, dict):
+            raise RepositoryError(f"ожидался JSON-объект: {path.name}")
+        return data
+
+    def _read_commit(self, commit_id: str) -> Commit:
+        """Загружает метаданные коммита по идентификатору."""
+        data = self._read_json(self.objects_dir / f"{commit_id}.json")
+        payload = data.get("commit")
+        if not isinstance(payload, dict):
+            raise RepositoryError(f"в объекте {commit_id} нет коммита")
+        try:
+            commit = Commit.model_validate(payload)
+        except ValidationError as exc:
+            raise RepositoryError(f"некорректный коммит {commit_id}") from exc
+        if commit.id != commit_id:
+            raise RepositoryError(f"идентификатор объекта не совпадает: {commit_id}")
+        return commit
+
+    def _read_payload(self, commit_id: str) -> tuple[Commit, WorldState, Chronicle]:
+        """Загружает коммит, снимок мира и летопись."""
+        data = self._read_json(self.objects_dir / f"{commit_id}.json")
+        commit = self._read_commit(commit_id)
+        snapshot = data.get("snapshot")
+        chronicle = data.get("chronicle")
+        if not isinstance(snapshot, dict) or not isinstance(chronicle, dict):
+            raise RepositoryError(f"объект {commit_id} не содержит снимок и летопись")
+        try:
+            state = WorldState.model_validate(snapshot)
+            history = Chronicle.from_json(json.dumps(chronicle, ensure_ascii=False))
+        except (ValidationError, ValueError) as exc:
+            raise RepositoryError(f"повреждённый объект {commit_id}") from exc
+        if state.snapshot_hash() != commit.snapshot_hash:
+            raise RepositoryError(f"хеш снимка не совпадает с коммитом {commit_id}")
+        return commit, state, history
+
+    def _resolve(self, ref: str) -> str:
+        """Превращает ``HEAD``, имя ветки или идентификатор в id коммита."""
+        value = self._read_text(self.head_path) if ref == "HEAD" else ref
+        ref_path = self.refs_dir / value
+        if ref_path.exists():
+            value = self._read_text(ref_path)
+        if (self.objects_dir / f"{value}.json").exists():
+            return value
+        raise RepositoryError(f"неизвестная ссылка: {ref}")
+
+    def _parent_for(self, branch: str) -> str | None:
+        """Определяет родителя нового коммита в ветке."""
+        ref_path = self.refs_dir / branch
+        if ref_path.exists():
+            return self._read_text(ref_path)
+        if not self.head_path.exists():
+            return None
+        head = self._read_text(self.head_path)
+        if (self.refs_dir / head).exists():
+            return self._read_text(self.refs_dir / head)
+        if (self.objects_dir / f"{head}.json").exists():
+            return head
+        return None
+
+    def commit(
+        self,
+        state: WorldState,
+        message: str,
+        branch: str = "main",
+        created_at: datetime | None = None,
+        chronicle: Chronicle | None = None,
+    ) -> Commit:
+        """Создаёт коммит и обновляет ветку и ``HEAD``."""
+        self.init()
+        parent_id = self._parent_for(branch)
+        snapshot_hash = state.snapshot_hash()
+        commit_id = compute_commit_id(parent_id, state.year, message, snapshot_hash)
+        if (self.objects_dir / f"{commit_id}.json").exists():
+            return self._read_commit(commit_id)
+
+        created = created_at if created_at is not None else datetime.now(UTC)
+        commit = Commit(
+            id=commit_id,
+            parent_id=parent_id,
+            branch=branch,
+            year=state.year,
+            message=message,
+            created_at=created,
+            snapshot_hash=snapshot_hash,
+        )
+        history = chronicle
+        if history is None:
+            history = self._chronicle if self._chronicle is not None else Chronicle()
+        payload = {
+            "commit": json.loads(commit.model_dump_json()),
+            "snapshot": json.loads(state.to_json()),
+            "chronicle": json.loads(history.to_json()),
+        }
+        self._write_atomic(
+            self.objects_dir / f"{commit_id}.json",
+            json.dumps(payload, ensure_ascii=False, sort_keys=True),
+        )
+        self._write_atomic(self.refs_dir / branch, commit_id)
+        self._write_atomic(self.head_path, branch)
+        return commit
+
+    def checkout(self, ref: str = "HEAD") -> tuple[WorldState, Chronicle]:
+        """Восстанавливает состояние и летопись по ссылке."""
+        self.init()
+        commit_id = self._resolve(ref)
+        _, state, history = self._read_payload(commit_id)
+        if ref == "HEAD":
+            target = self._read_text(self.head_path)
+        elif (self.refs_dir / ref).exists():
+            target = ref
+        else:
+            target = commit_id
+        self._write_atomic(self.head_path, target)
+        return state, history
+
+    def log(self, branch: str | None = None) -> list[Commit]:
+        """История коммитов от ``HEAD`` (или ветки) к корню."""
+        self.init()
+        ref = branch if branch is not None else self._read_text(self.head_path)
+        try:
+            cursor: str | None = self._resolve(ref)
+        except RepositoryError:
+            return []
+        history: list[Commit] = []
+        while cursor is not None:
+            commit = self._read_commit(cursor)
+            history.append(commit)
+            cursor = commit.parent_id
+        return history
+
+    def current_branch(self) -> str:
+        """Имя текущей ветки или ``detached`` для отсоединённого ``HEAD``."""
+        self.init()
+        head = self._read_text(self.head_path)
+        return head if (self.refs_dir / head).exists() else "detached"
+
+    def head(self) -> Commit | None:
+        """Текущий коммит или ``None`` для пустого репозитория."""
+        self.init()
+        try:
+            return self._read_commit(self._resolve("HEAD"))
+        except RepositoryError:
+            return None
