@@ -74,3 +74,6 @@ $RECYCLE.BIN/
 
 # --- Служебные отчёты диагностики прав DSH ---
 .acl-diagnostics/
+
+# --- Временные каталоги pytest ---
+pytest-of-*/
