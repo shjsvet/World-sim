@@ -79,7 +79,7 @@ def test_config_defaults() -> None:
     """У конфигурации осмысленные значения по умолчанию."""
     config = WorldConfig(seed=42, size=8)
 
-    assert config.initial_factions == 0
+    assert config.initial_factions == 2
     assert config.aggression == 0.5
     assert config.growth_rate == 0.02
     assert config.plague_chance == 0.01

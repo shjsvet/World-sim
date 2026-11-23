@@ -19,7 +19,7 @@ class WorldConfig(BaseModel):
 
     seed: int
     size: int = Field(ge=4, le=512)
-    initial_factions: int = Field(default=0, ge=0, le=4)
+    initial_factions: int = Field(default=2, ge=0, le=4)
     aggression: float = Field(default=0.5, ge=0, le=1)
     growth_rate: float = Field(default=0.02, ge=0)
     plague_chance: float = Field(default=0.01, ge=0, le=1)

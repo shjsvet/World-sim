@@ -38,8 +38,8 @@ def test_different_seeds_produce_different_maps() -> None:
 
 
 def test_generate_map_matches_world_creation() -> None:
-    """``create_world`` использует тот же генератор, что и ``generate_map``."""
-    config = make_config(seed=7, size=16)
+    """``create_world`` без фракций использует тот же генератор карты."""
+    config = WorldConfig(seed=7, size=16, initial_factions=0)
 
     assert create_world(config).map == generate_map(config, Rng(config.seed))
 
