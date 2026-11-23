@@ -45,6 +45,15 @@ class FactionUpdate:
 
 
 @dataclass(frozen=True)
+class BattleRequest:
+    """Заявка на бой, которую экспансия передаёт правилу войны."""
+
+    attacker_id: int
+    defender_id: int
+    tile_id: int
+
+
+@dataclass(frozen=True)
 class StepContext:
     """Контекст одного шага симуляции, доступный правилам."""
 
@@ -52,6 +61,7 @@ class StepContext:
     config: WorldConfig
     rng: Rng
     stats: Mapping[int, FactionStats] = field(default_factory=dict)
+    pending_battles: list[BattleRequest] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
