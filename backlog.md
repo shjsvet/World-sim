@@ -4,8 +4,8 @@
 промптов и журнал их изменений — в [docs/PROMPTS.md](docs/PROMPTS.md), требования — в
 [docs/TASK.md](docs/TASK.md).
 
-**Всего задач:** 46 (T00–T45) · ✅ выполнено: 9 · 🟨 в работе: 0 · ⬜ в бэклоге: 37
-**Текущая задача:** T09 — Модель события (`core/events.py`)
+**Всего задач:** 46 (T00–T45) · ✅ выполнено: 10 · 🟨 в работе: 0 · ⬜ в бэклоге: 36
+**Текущая задача:** T10 — Конфиг и снимок мира (`core/state.py`)
 **Обновлено:** 2026-11-23
 
 ## Как ведётся список
@@ -26,8 +26,8 @@
 
 ## Следующий шаг
 
-- **T09 — Модель события** (зависит от T03): `Event`, `EventType` (включая военные, социальные и магические типы), фабрики, `payload`.
-- Далее: T10 (снимок мира), T11 (летопись), T12–T15 (генератор, движок, UI).
+- **T10 — Конфиг и снимок мира** (зависит от T08): `WorldConfig`, `WorldState.evolve`, `snapshot_hash`, JSON.
+- Далее: T11 (летопись), T12–T15 (генератор, движок, UI).
 - **T04 (CI)** отложена: удалённый репозиторий не подключён, локальная проверка идёт через `pytest`/`mypy`/`ruff`.
 
 ## Доска задач
@@ -43,7 +43,7 @@
 | T06 | N-арное дерево (`core/ntree.py`) | 0.2 | P0 | T05 | ✅ |
 | T07 | Детерминированный RNG (`core/rng.py`) | 0.2 | P0 | T03 | ✅ |
 | T08 | Модели карты (`core/geography.py`) | 0.2 | P0 | T07 | ✅ |
-| T09 | Модель события (`core/events.py`) | 0.2 | P0 | T03 | ⬜ |
+| T09 | Модель события (`core/events.py`) | 0.2 | P0 | T03 | ✅ |
 | T10 | Конфиг и снимок мира (`core/state.py`) | 0.2 | P0 | T08 | ⬜ |
 | T11 | Летопись поверх BST (`core/chronicle.py`) | 0.2 | P0 | T05, T09 | ⬜ |
 | T12 | Процедурная генерация мира (`generator/`) | 0.3 | P0 | T07, T08, T10 | ⬜ |
@@ -111,3 +111,4 @@
 | 2026-11-12 | T06 | `task(T06): N-арное дерево` | Реализован `Node[T]` в `src/worldsim/core/ntree.py`: родитель и дети, `add_child` с запретом самоприсоединения, повторного родителя и цикла, `remove_child`, `move_to` с повторной проверкой цикла и откреплением, `find`, `path_to_root`, `depth`, `is_ancestor`, pre-order `walk`, `walk_postorder`, `leaves`, итеративные `to_dict`/`from_dict` с восстановлением ссылок `parent`, нерекурсивный `__repr__`. Тесты `tests/core/test_ntree.py`: запрет циклов через `add_child` и `move_to`, перенос узла, сериализация и JSON round-trip, дерево из 10 000 узлов и repr на 3 000. Проверено: 36 тестов зелёные, mypy strict — 12 файлов, ruff и format чистые, coverage 94 % |
 | 2026-11-21 | T07 | `task(T07): детерминированный RNG` | Реализован `Rng` в `src/worldsim/core/rng.py`: `int`, `uniform`, `random`, `choice`, `weighted_choice` (с валидацией весов), `shuffle`, `chance`, `fork(label)` с сидом из `sha256(f"{seed}:{label}")` и JSON-совместимые `getstate`/`setstate`. `conftest.deterministic_rng` переведён на `Rng`, тесты BST перемешивают через `Rng.shuffle`; добавлен тест, что `random` импортируется только в `rng.py`. Проверено: 52 теста зелёные (включая детерминизм в отдельном процессе и round-trip состояния через JSON), mypy strict — 13 файлов, ruff и format чистые, coverage 94 % |
 | 2026-11-23 | T08 | `task(T08): модели карты` | Реализованы `Biome` (9 биомов со свойствами воды, плодородия, высоты, стоимости перемещения, защиты, еды, цвета и эмодзи), `ResourceType`, `ClimateZone`, `RegionData` (24 поля с валидаторами, `is_land`, `is_city`, `defense_multiplier()`, `food_output()`), `WorldMap` (проверка размера и координат, `at`, `by_id`, `neighbors`, `land_tiles`, `cities`, `tiles_with`, `center`). В `pyproject.toml` pydantic ограничен `<3`. Тесты `tests/core/test_geography.py`: диапазоны, пороги города, формулы еды и защиты, соседи и диагонали, фильтры карты, JSON round-trip. Поставлен pydantic 2.14.4 (колёса скачаны напрямую с PyPI). Проверено: 79 тестов зелёные, mypy strict — 14 файлов, ruff и format чистые, coverage 95 % |
+| 2026-11-23 | T09 | `task(T09): модель события` | Реализованы `EventType` (26 типов: эпидемии, голод, войны, экспансия, дипломатия, социальные, ресурсные и магические события) и `Event` (frozen): диапазоны `severity`, `year`, `id`, нормализация `summary` (trim, непустой, ≤300), проверка неотрицательных `tile_ids`/`faction_ids`, валидация `payload`, `as_dict()`; фабрики `plague`, `expansion`, `war`, `starvation`, `peace`. Тесты `tests/core/test_events.py`: типы, значения по умолчанию, границы и валидаторы, неизменяемость, JSON round-trip, фабрики. Проверено: 98 тестов зелёные, mypy strict — 15 файлов, ruff и format чистые, coverage 96 % |
