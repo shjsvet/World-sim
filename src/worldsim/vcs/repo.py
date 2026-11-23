@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -169,10 +170,15 @@ class WorldRepo:
     Раскладка:
     ``objects/<commit_id>.json`` — метаданные коммита, снимок и летопись;
     ``refs/branches/<name>`` — идентификатор коммита ветки;
+    ``refs/tags/<name>`` — именованная ссылка на коммит;
     ``HEAD`` — текущая ветка или идентификатор коммита.
 
     Запись выполняется атомарно: временный файл рядом с целевым и
     ``os.replace``. Повреждённые объекты дают ``RepositoryError``.
+
+    Слияние веток (``merge``) сознательно не реализуется: альтернативные
+    реальности развиваются независимо, а выбор между ними остаётся за
+    пользователем через ``checkout``.
     """
 
     def __init__(self, root: Path, chronicle: Chronicle | None = None) -> None:
@@ -180,6 +186,7 @@ class WorldRepo:
         self.meta_dir = self.root / ".worldsim"
         self.objects_dir = self.meta_dir / "objects"
         self.refs_dir = self.meta_dir / "refs" / "branches"
+        self.tags_dir = self.meta_dir / "refs" / "tags"
         self.head_path = self.meta_dir / "HEAD"
         self._chronicle = chronicle
 
@@ -187,6 +194,7 @@ class WorldRepo:
         """Создаёт структуру каталогов и ``HEAD`` (идемпотентно)."""
         self.objects_dir.mkdir(parents=True, exist_ok=True)
         self.refs_dir.mkdir(parents=True, exist_ok=True)
+        self.tags_dir.mkdir(parents=True, exist_ok=True)
         if not self.head_path.exists():
             self._write_atomic(self.head_path, "main")
 
@@ -253,11 +261,13 @@ class WorldRepo:
         return commit, state, history
 
     def _resolve(self, ref: str) -> str:
-        """Превращает ``HEAD``, имя ветки или идентификатор в id коммита."""
+        """Превращает ``HEAD``, имя ветки, тег или id в идентификатор коммита."""
         value = self._read_text(self.head_path) if ref == "HEAD" else ref
-        ref_path = self.refs_dir / value
-        if ref_path.exists():
-            value = self._read_text(ref_path)
+        for directory in (self.refs_dir, self.tags_dir):
+            ref_path = directory / value
+            if ref_path.exists():
+                value = self._read_text(ref_path)
+                break
         if (self.objects_dir / f"{value}.json").exists():
             return value
         raise RepositoryError(f"неизвестная ссылка: {ref}")
@@ -360,3 +370,50 @@ class WorldRepo:
             return self._read_commit(self._resolve("HEAD"))
         except RepositoryError:
             return None
+
+    def create_branch(self, name: str, from_ref: str = "HEAD") -> str:
+        """Создаёт ветку от ссылки и возвращает идентификатор коммита.
+
+        Слияние веток не поддерживается: альтернативные реальности
+        развиваются независимо.
+        """
+        self.init()
+        self._validate_branch_name(name)
+        if (self.refs_dir / name).exists():
+            raise RepositoryError(f"ветка уже существует: {name}")
+        commit_id = self._resolve(from_ref)
+        self._write_atomic(self.refs_dir / name, commit_id)
+        return commit_id
+
+    def checkout_branch(self, name: str) -> tuple[WorldState, Chronicle]:
+        """Переключает ``HEAD`` на ветку и восстанавливает её состояние."""
+        self.init()
+        if not (self.refs_dir / name).exists():
+            raise RepositoryError(f"ветка не найдена: {name}")
+        return self.checkout(name)
+
+    def list_branches(self) -> dict[str, str]:
+        """Возвращает существующие ветки: имя → идентификатор коммита."""
+        self.init()
+        return {
+            path.name: self._read_text(path)
+            for path in sorted(self.refs_dir.iterdir())
+            if path.is_file()
+        }
+
+    def tag(self, name: str, ref: str = "HEAD") -> str:
+        """Ставит именованную ссылку на коммит и возвращает его id."""
+        self.init()
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+", name):
+            raise RepositoryError(f"недопустимое имя тега: {name}")
+        if (self.tags_dir / name).exists():
+            raise RepositoryError(f"тег уже существует: {name}")
+        commit_id = self._resolve(ref)
+        self._write_atomic(self.tags_dir / name, commit_id)
+        return commit_id
+
+    @staticmethod
+    def _validate_branch_name(name: str) -> None:
+        """Проверяет имя ветки по шаблону ``[A-Za-z0-9_-]+``."""
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", name):
+            raise RepositoryError(f"недопустимое имя ветки: {name}")

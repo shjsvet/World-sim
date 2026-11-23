@@ -26,6 +26,11 @@ class WorldConfig(BaseModel):
     plague_chance: float = Field(default=0.01, ge=0, le=1)
     magic_level: float = Field(default=0.0, ge=0, le=1)
 
+    def evolve(self, **changes: object) -> WorldConfig:
+        """Возвращает копию конфигурации с изменениями и повторной валидацией."""
+        data: dict[str, object] = {**self.model_dump(), **changes}
+        return WorldConfig.model_validate(data)
+
 
 class WorldState(BaseModel):
     """Неизменяемый снимок мира на конкретный год.
