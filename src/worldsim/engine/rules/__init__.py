@@ -22,6 +22,7 @@ class TileUpdate:
     Attributes:
         tile_id: Идентификатор тайла.
         population: Новое население; ``None`` — не менять.
+        population_capacity: Новая ёмкость; ``None`` — не менять.
         fertility: Новое плодородие; ``None`` — не менять.
         owner_id: Новый владелец (используется вместе с ``set_owner``).
         set_owner: Явно ли менять владельца (позволяет выставить ``None``).
@@ -29,10 +30,12 @@ class TileUpdate:
         unrest: Новое недовольство; ``None`` — не менять.
         fortification: Новая фортификация; ``None`` — не менять.
         army_presence: Новый гарнизон; ``None`` — не менять.
+        urbanization: Новый уровень урбанизации; ``None`` — не менять.
     """
 
     tile_id: int
     population: int | None = None
+    population_capacity: int | None = None
     fertility: float | None = None
     owner_id: int | None = None
     set_owner: bool = False
@@ -40,6 +43,7 @@ class TileUpdate:
     unrest: float | None = None
     fortification: float | None = None
     army_presence: int | None = None
+    urbanization: float | None = None
 
 
 @dataclass(frozen=True)

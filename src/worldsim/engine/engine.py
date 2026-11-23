@@ -123,6 +123,8 @@ class SimulationEngine:
             data = tile.model_dump()
             if update.population is not None:
                 data["population"] = update.population
+            if update.population_capacity is not None:
+                data["population_capacity"] = update.population_capacity
             if update.fertility is not None:
                 data["fertility"] = update.fertility
             if update.happiness is not None:
@@ -133,6 +135,8 @@ class SimulationEngine:
                 data["fortification"] = update.fortification
             if update.army_presence is not None:
                 data["army_presence"] = update.army_presence
+            if update.urbanization is not None:
+                data["urbanization"] = update.urbanization
             if update.set_owner:
                 data["owner_id"] = update.owner_id
             tiles[update.tile_id] = RegionData.model_validate(data)
