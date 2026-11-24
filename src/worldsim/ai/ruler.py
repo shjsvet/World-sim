@@ -41,6 +41,7 @@ class RulerDecision(BaseModel):
     confidence: float = Field(default=0.5, ge=0, le=1)
     order_kind: str = Field(default="", max_length=64)
     order_years: int = Field(default=0, ge=0, le=50)
+    trade_resource: str = Field(default="food", max_length=32)
 
     @model_validator(mode="after")
     def _validate_order(self) -> RulerDecision:
@@ -58,7 +59,8 @@ SYSTEM_PROMPT = (
     + '), "target_tile_id" (целое или null), "amount" (целое >= 0), '
     '"message" (строка), "thought" (1–1000 символов, объяснение решения), '
     '"confidence" (0..1), "order_kind" (для ISSUE_ORDER: accumulate_gold, '
-    'recruit или defend), "order_years" (1–50). Действуй только в интересах '
+    'recruit или defend), "order_years" (1–50), "trade_resource" '
+    "(для OFFER_TRADE: food или ресурс). Действуй только в интересах "
     "своей фракции и не выдумывай факты, которых нет в переданных данных."
 )
 
@@ -150,6 +152,18 @@ def fallback_decision(state: WorldState, faction: Faction) -> RulerDecision:
             confidence=0.7,
         )
 
+    trade = _trade_opportunity(state, faction)
+    if trade is not None:
+        target_tile, amount = trade
+        return RulerDecision(
+            action=RulerAction.OFFER_TRADE,
+            target_tile_id=target_tile,
+            amount=amount,
+            trade_resource="food",
+            thought=("У соседа голод, а у нас избыток еды — предложу обмен на золото."),
+            confidence=0.6,
+        )
+
     has_order = any(
         order.faction_id == faction.id and order.years_left > 0 for order in state.standing_orders
     )
@@ -167,6 +181,31 @@ def fallback_decision(state: WorldState, faction: Faction) -> RulerDecision:
         thought="Долгосрочный приказ уже выполняется — продолжаю накапливать силы.",
         confidence=0.4,
     )
+
+
+def _trade_opportunity(
+    state: WorldState,
+    faction: Faction,
+) -> tuple[int, int] | None:
+    """Ищет голодающего соседа с золотом для обмена еды."""
+    factions = {item.id: item for item in state.factions}
+    if faction.food_stockpile <= 20:
+        return None
+    for tile in state.map.tiles:
+        if tile.owner_id != faction.id:
+            continue
+        for neighbor in state.map.neighbors(tile.x, tile.y):
+            if neighbor.owner_id is None or neighbor.owner_id == faction.id:
+                continue
+            recipient = factions.get(neighbor.owner_id)
+            if recipient is None or recipient.food_stockpile >= 20:
+                continue
+            if recipient.treasury < 2:
+                continue
+            amount = min(10, int(faction.food_stockpile // 2))
+            if amount > 0:
+                return neighbor.id, amount
+    return None
 
 
 def _faction_context(state: WorldState, faction: Faction) -> dict[str, object]:
