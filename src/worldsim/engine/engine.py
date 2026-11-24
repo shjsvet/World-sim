@@ -57,6 +57,11 @@ class SimulationEngine:
         """Летопись движка."""
         return self._chronicle
 
+    @property
+    def rules(self) -> tuple[Rule, ...]:
+        """Подключённые правила в порядке применения."""
+        return self._rules
+
     def reset(self, state: WorldState) -> None:
         """Устанавливает новый снимок и пересоздаёт генератор по его сиду."""
         self._state = state

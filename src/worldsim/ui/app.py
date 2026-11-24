@@ -61,6 +61,19 @@ def main() -> None:
         st.info("Сгенерируйте мир в панели слева, чтобы начать симуляцию.")
         return
 
+    with st.sidebar.expander("Подключённые правила"):
+        st.dataframe(
+            [
+                {
+                    "Правило": rule.name,
+                    "Приоритет": rule.priority,
+                    "Включено": getattr(rule, "enabled", True),
+                }
+                for rule in engine.rules
+            ],
+            use_container_width=True,
+        )
+
     world_tab, history_tab, ai_tab = st.tabs(["Мир", "История", "ИИ"])
 
     with world_tab:
