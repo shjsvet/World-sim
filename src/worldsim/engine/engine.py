@@ -4,13 +4,21 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
+from worldsim.ai.ruler import RulerDecision
 from worldsim.core.chronicle import Chronicle
 from worldsim.core.events import Event
 from worldsim.core.geography import RegionData, WorldMap
 from worldsim.core.rng import Rng
+from worldsim.core.rulers import RulerThought
 from worldsim.core.state import WorldState
 from worldsim.engine.metrics import compute_faction_stats
-from worldsim.engine.rules import FactionUpdate, Rule, RuleOutcome, StepContext
+from worldsim.engine.rules import (
+    AICommand,
+    FactionUpdate,
+    Rule,
+    RuleOutcome,
+    StepContext,
+)
 
 
 class SimulationEngine:
@@ -40,6 +48,7 @@ class SimulationEngine:
         self._chronicle = chronicle
         self._state = initial_state
         self._rng = Rng(initial_state.config.seed) if initial_state is not None else None
+        self._pending_ai_decisions: list[AICommand] = []
 
     @property
     def state(self) -> WorldState:
@@ -62,6 +71,26 @@ class SimulationEngine:
         """Подключённые правила в порядке применения."""
         return self._rules
 
+    @property
+    def pending_ai_decisions(self) -> tuple[AICommand, ...]:
+        """Решения ИИ, ожидающие следующего шага."""
+        return tuple(self._pending_ai_decisions)
+
+    def queue_decision(self, faction_id: int, decision: RulerDecision) -> None:
+        """Ставит одно решение ИИ в очередь следующего шага."""
+        self._pending_ai_decisions.append(AICommand(faction_id=faction_id, decision=decision))
+
+    def queue_decisions(self, commands: Sequence[AICommand]) -> None:
+        """Ставит несколько решений ИИ в очередь следующего шага."""
+        self._pending_ai_decisions.extend(commands)
+
+    def record_thoughts(self, thoughts: Sequence[RulerThought]) -> WorldState:
+        """Добавляет мысли правителей в текущий снимок без шага времени."""
+        if not thoughts:
+            return self.state
+        self._state = self.state.model_copy(update={"thoughts": (*self.state.thoughts, *thoughts)})
+        return self._state
+
     def reset(self, state: WorldState) -> None:
         """Устанавливает новый снимок и пересоздаёт генератор по его сиду."""
         self._state = state
@@ -77,11 +106,14 @@ class SimulationEngine:
             raise RuntimeError("снимок мира не установлен: передайте initial_state или reset()")
 
         state = self._state
+        commands = self._pending_ai_decisions
+        self._pending_ai_decisions = []
         ctx = StepContext(
             year=state.year,
             config=state.config,
             rng=self._rng,
             stats=compute_faction_stats(state),
+            ai_decisions=commands,
         )
 
         for rule in self._rules:
