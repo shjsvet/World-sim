@@ -27,6 +27,11 @@ from worldsim.ui.ai_panel import (
     safe_client,
     write_chapter_for_engine,
 )
+from worldsim.ui.chat import (
+    filter_messages,
+    format_message,
+    messages_to_markdown,
+)
 from worldsim.ui.figures import LAYERS, tile_layer_figure, timeline_figure
 from worldsim.ui.history import (
     checkout_snapshot,
@@ -197,8 +202,8 @@ def main() -> None:
             hide_index=True,
         )
 
-    world_tab, history_tab, ai_tab, thoughts_tab = st.tabs(
-        ["🌍 Мир", "🕰 История", "✨ ИИ", "🧠 Мысли"]
+    world_tab, history_tab, ai_tab, thoughts_tab, chat_tab = st.tabs(
+        ["🌍 Мир", "🕰 История", "✨ ИИ", "🧠 Мысли", "💬 Переписка"]
     )
 
     with world_tab:
@@ -209,6 +214,8 @@ def main() -> None:
         _render_ai(engine)
     with thoughts_tab:
         _render_thoughts(engine)
+    with chat_tab:
+        _render_chat(engine)
 
 
 def _render_world(engine: SimulationEngine, layer: str) -> None:
@@ -710,6 +717,48 @@ def _render_history(engine: SimulationEngine, repo_dir: str) -> None:
         if st.button("Создать коммит"):
             commit_world(repo, engine.state, engine.chronicle, message)
             st.rerun()
+
+
+def _render_chat(engine: SimulationEngine) -> None:
+    """Вкладка «Переписка правителей»."""
+    st.subheader("Переписка правителей")
+    st.caption("Прямая трансляция дипломатических сообщений между фракциями.")
+    state = engine.state
+    if not state.diplomatic_messages:
+        st.info(
+            "Сообщений пока нет. Они появляются, когда ИИ-правители открывают канал переговоров."
+        )
+        return
+
+    names = {faction.id: faction.name for faction in state.factions}
+    columns = st.columns(2)
+    sender = columns[0].selectbox(
+        "От",
+        options=[None, *names],
+        format_func=lambda faction_id: "Любой" if faction_id is None else names[faction_id],
+    )
+    recipient = columns[1].selectbox(
+        "К",
+        options=[None, *names],
+        format_func=lambda faction_id: "Любой" if faction_id is None else names[faction_id],
+    )
+    entries = filter_messages(
+        state.diplomatic_messages,
+        sender_id=sender,
+        recipient_id=recipient,
+    )
+    if not entries:
+        st.info("Под выбранные фильтры сообщений нет.")
+        return
+    st.caption(f"Сообщений: {len(entries)}")
+    for message in entries:
+        with st.container(border=True):
+            st.markdown(format_message(message, names))
+    st.download_button(
+        "Скачать переписку .md",
+        data=messages_to_markdown(entries, state.factions),
+        file_name=f"diplomacy_{state.year}.md",
+    )
 
 
 def _render_thoughts(engine: SimulationEngine) -> None:

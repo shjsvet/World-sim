@@ -9,7 +9,7 @@ from worldsim.core.chronicle import Chronicle
 from worldsim.core.events import Event
 from worldsim.core.geography import RegionData, WorldMap
 from worldsim.core.rng import Rng
-from worldsim.core.rulers import RulerThought
+from worldsim.core.rulers import DiplomaticMessage, RulerThought
 from worldsim.core.state import WorldState
 from worldsim.engine.metrics import compute_faction_stats
 from worldsim.engine.rules import (
@@ -89,6 +89,20 @@ class SimulationEngine:
         if not thoughts:
             return self.state
         self._state = self.state.model_copy(update={"thoughts": (*self.state.thoughts, *thoughts)})
+        return self._state
+
+    def record_messages(self, messages: Sequence[DiplomaticMessage]) -> WorldState:
+        """Добавляет дипломатические сообщения в текущий снимок."""
+        if not messages:
+            return self.state
+        self._state = self.state.model_copy(
+            update={
+                "diplomatic_messages": (
+                    *self.state.diplomatic_messages,
+                    *messages,
+                )
+            }
+        )
         return self._state
 
     def reset(self, state: WorldState) -> None:

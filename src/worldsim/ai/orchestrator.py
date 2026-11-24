@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from worldsim.ai.client import LLMClient
+from worldsim.ai.diplomacy_chat import DiplomacyChat
 from worldsim.ai.ruler import LLMRuler, RulerDecision, fallback_decision
 from worldsim.core.faction import Faction
-from worldsim.core.rulers import RulerThought
+from worldsim.core.rulers import DiplomaticMessage, RulerThought
 from worldsim.core.state import WorldState
 from worldsim.engine.engine import SimulationEngine
 from worldsim.engine.rules import AICommand
@@ -55,6 +56,25 @@ class AIRulerOrchestrator:
         if thoughts:
             engine.record_thoughts(tuple(thoughts))
         return engine.state
+
+    def open_channel(
+        self,
+        engine: SimulationEngine,
+        sender_id: int,
+        recipient_id: int,
+        topic: str = "peace",
+    ) -> tuple[DiplomaticMessage, ...]:
+        """Открывает канал между двумя фракциями и сохраняет сообщение."""
+        state = engine.state
+        factions = {faction.id: faction for faction in state.factions}
+        try:
+            sender = factions[sender_id]
+            recipient = factions[recipient_id]
+        except KeyError as exc:
+            raise ValueError("фракция отсутствует в снимке") from exc
+        messages = DiplomacyChat(self._client).open_channel(sender, recipient, topic, state)
+        engine.record_messages(messages)
+        return messages
 
     def _decide(self, state: WorldState, faction: Faction) -> RulerDecision:
         """Выбирает LLM или fallback для фракции."""
