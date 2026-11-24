@@ -8,6 +8,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from worldsim.core.culture import Culture, Religion
 from worldsim.core.diplomacy import War
 from worldsim.core.faction import Faction
 from worldsim.core.geography import WorldMap
@@ -50,6 +51,8 @@ class WorldState(BaseModel):
         map: Сетка тайлов.
         factions: Фракции мира.
         wars: Активные и завершённые войны.
+        cultures: Культуры мира.
+        religions: Религии мира.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -59,6 +62,8 @@ class WorldState(BaseModel):
     map: WorldMap
     factions: tuple[Faction, ...] = ()
     wars: tuple[War, ...] = ()
+    cultures: tuple[Culture, ...] = ()
+    religions: tuple[Religion, ...] = ()
 
     @model_validator(mode="after")
     def _validate_factions(self) -> Self:
@@ -99,6 +104,30 @@ class WorldState(BaseModel):
                 raise ValueError("фракция не может воевать сама с собой")
             if war.attacker_id not in faction_ids or war.defender_id not in faction_ids:
                 raise ValueError("война ссылается на несуществующую фракцию")
+
+        if len({culture.id for culture in self.cultures}) != len(self.cultures):
+            raise ValueError("идентификаторы культур должны быть уникальны")
+        if len({culture.name.casefold() for culture in self.cultures}) != len(self.cultures):
+            raise ValueError("имена культур должны быть уникальны")
+        culture_ids = {culture.id for culture in self.cultures}
+        if len({religion.id for religion in self.religions}) != len(self.religions):
+            raise ValueError("идентификаторы религий должны быть уникальны")
+        for religion in self.religions:
+            if religion.culture_id not in culture_ids:
+                raise ValueError("религия ссылается на несуществующую культуру")
+        religion_ids = {religion.id for religion in self.religions}
+
+        for tile in self.map.tiles:
+            if tile.culture_id is not None and tile.culture_id not in culture_ids:
+                raise ValueError(f"тайл {tile.id} ссылается на несуществующую культуру")
+            if tile.religion_id is not None and tile.religion_id not in religion_ids:
+                raise ValueError(f"тайл {tile.id} ссылается на несуществующую религию")
+
+        if self.cultures:
+            culture_names = {culture.name.casefold() for culture in self.cultures}
+            for faction in self.factions:
+                if faction.culture.casefold() not in culture_names:
+                    raise ValueError(f"культура фракции {faction.id} отсутствует в списке культур")
         return self
 
     def evolve(self, **changes: object) -> WorldState:

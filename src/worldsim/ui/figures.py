@@ -15,11 +15,23 @@ NEUTRAL_COLOR = "#9e9e9e"
 LAYERS: tuple[str, ...] = (
     "biomes",
     "political",
+    "culture",
     "resources",
     "happiness",
     "unrest",
     "army",
     "mana",
+)
+
+_CULTURE_COLORS: tuple[str, ...] = (
+    "#e57373",
+    "#64b5f6",
+    "#81c784",
+    "#ffb74d",
+    "#ba68c8",
+    "#4db6ac",
+    "#f06292",
+    "#a1887f",
 )
 
 _RESOURCE_COLORS: dict[ResourceType, str] = {
@@ -211,6 +223,8 @@ def _layer_color(tile: RegionData, layer: str, factions: dict[int, Faction]) -> 
     if layer == "political":
         faction = factions.get(tile.owner_id) if tile.owner_id is not None else None
         return faction.color if faction is not None else NEUTRAL_COLOR
+    if layer == "culture":
+        return _culture_color(tile)
     if layer == "resources":
         return _RESOURCE_COLORS[tile.resource_type]
     if layer == "happiness":
@@ -222,6 +236,16 @@ def _layer_color(tile: RegionData, layer: str, factions: dict[int, Faction]) -> 
     if tile.ley_line:
         return "#00e5ff"
     return _lerp_color("#e3f2fd", "#4a148c", tile.mana_density / 100.0)
+
+
+def _culture_color(tile: RegionData) -> str:
+    """Цвет культуры тайла."""
+    if tile.culture_id is not None:
+        return _CULTURE_COLORS[tile.culture_id % len(_CULTURE_COLORS)]
+    if tile.culture is not None:
+        index = sum(ord(char) for char in tile.culture) % len(_CULTURE_COLORS)
+        return _CULTURE_COLORS[index]
+    return NEUTRAL_COLOR
 
 
 def _tile_hover(state: WorldState, tile: RegionData) -> str:

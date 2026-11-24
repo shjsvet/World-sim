@@ -31,6 +31,11 @@ class TileUpdate:
         fortification: Новая фортификация; ``None`` — не менять.
         army_presence: Новый гарнизон; ``None`` — не менять.
         urbanization: Новый уровень урбанизации; ``None`` — не менять.
+        culture: Название культуры населения; ``None`` — не менять.
+        culture_id: Идентификатор культуры; ``None`` — не менять.
+        religion_id: Идентификатор религии; ``None`` — не менять.
+        assimilation: Уровень ассимиляции; ``None`` — не менять.
+        cultural_tension: Культурное напряжение; ``None`` — не менять.
     """
 
     tile_id: int
@@ -44,6 +49,11 @@ class TileUpdate:
     fortification: float | None = None
     army_presence: int | None = None
     urbanization: float | None = None
+    culture: str | None = None
+    culture_id: int | None = None
+    religion_id: int | None = None
+    assimilation: float | None = None
+    cultural_tension: float | None = None
 
 
 @dataclass(frozen=True)

@@ -137,6 +137,16 @@ class SimulationEngine:
                 data["army_presence"] = update.army_presence
             if update.urbanization is not None:
                 data["urbanization"] = update.urbanization
+            if update.culture is not None:
+                data["culture"] = update.culture
+            if update.culture_id is not None:
+                data["culture_id"] = update.culture_id
+            if update.religion_id is not None:
+                data["religion_id"] = update.religion_id
+            if update.assimilation is not None:
+                data["assimilation"] = update.assimilation
+            if update.cultural_tension is not None:
+                data["cultural_tension"] = update.cultural_tension
             if update.set_owner:
                 data["owner_id"] = update.owner_id
             tiles[update.tile_id] = RegionData.model_validate(data)
