@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
+from worldsim.ai.ruler import RulerDecision
 from worldsim.core.diplomacy import War
 from worldsim.core.events import Event
 from worldsim.core.magic import MagicAcademy
@@ -93,6 +94,14 @@ class MagicBoost:
 
 
 @dataclass(frozen=True)
+class AICommand:
+    """Решение ИИ-правителя, привязанное к фракции."""
+
+    faction_id: int
+    decision: RulerDecision
+
+
+@dataclass(frozen=True)
 class StepContext:
     """Контекст одного шага симуляции, доступный правилам."""
 
@@ -102,6 +111,7 @@ class StepContext:
     stats: Mapping[int, FactionStats] = field(default_factory=dict)
     pending_battles: list[BattleRequest] = field(default_factory=list)
     magic_boosts: list[MagicBoost] = field(default_factory=list)
+    ai_decisions: list[AICommand] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
