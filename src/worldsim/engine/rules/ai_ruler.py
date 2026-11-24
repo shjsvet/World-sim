@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from worldsim.ai.ruler import RulerAction
 from worldsim.core.army import ArmyMarch, march_duration
+from worldsim.core.diplomacy import War
 from worldsim.core.events import Event, EventType
 from worldsim.core.faction import Faction, MagicSchool
 from worldsim.core.geography import ResourceType
@@ -45,6 +46,8 @@ class AIRulerRule:
         next_order_id = max((item.id for item in orders), default=-1) + 1
         marches = list(state.army_marches)
         next_march_id = max((item.id for item in marches), default=-1) + 1
+        wars = list(state.wars)
+        next_war_id = max((item.id for item in wars), default=-1) + 1
         tile_updates: list[TileUpdate] = []
         events: list[Event] = []
 
@@ -107,6 +110,15 @@ class AIRulerRule:
                     next_march_id,
                     ctx.year,
                 )
+            elif action is RulerAction.DECLARE_WAR:
+                next_war_id = self._declare_war(
+                    state,
+                    command,
+                    wars,
+                    events,
+                    next_war_id,
+                    ctx.year,
+                )
 
         return RuleOutcome(
             tile_updates=tuple(tile_updates),
@@ -115,6 +127,7 @@ class AIRulerRule:
             academies=tuple(academies),
             standing_orders=tuple(orders),
             army_marches=tuple(marches),
+            wars=tuple(wars) if len(wars) != len(state.wars) else None,
         )
 
     @staticmethod
@@ -421,6 +434,57 @@ class AIRulerRule:
                 tile_ids=(source.id, target_id),
                 faction_ids=(faction.id,),
                 severity=0.4,
+            )
+        )
+        return next_id + 1
+
+    @staticmethod
+    def _declare_war(
+        state: WorldState,
+        command: AICommand,
+        wars: list[War],
+        events: list[Event],
+        next_id: int,
+        year: int,
+    ) -> int:
+        """Объявляет войну соседней фракции по решению ИИ."""
+        target_id = command.decision.target_tile_id
+        if target_id is None or target_id >= len(state.map.tiles):
+            return next_id
+        target = state.map.by_id(target_id)
+        if target.owner_id is None or target.owner_id == command.faction_id:
+            return next_id
+        for war in wars:
+            if {war.attacker_id, war.defender_id} != {
+                command.faction_id,
+                target.owner_id,
+            }:
+                continue
+            if war.active:
+                return next_id
+            if war.truce_until_year is not None and war.truce_until_year >= year:
+                return next_id
+        wars.append(
+            War(
+                id=next_id,
+                attacker_id=command.faction_id,
+                defender_id=target.owner_id,
+                started_year=year,
+                active=True,
+            )
+        )
+        events.append(
+            Event(
+                id=0,
+                year=year,
+                type=EventType.WAR,
+                summary=(
+                    f"ИИ-правитель фракции {command.faction_id} объявил войну "
+                    f"фракции {target.owner_id}"
+                ),
+                tile_ids=(target.id,),
+                faction_ids=(command.faction_id, target.owner_id),
+                severity=0.8,
             )
         )
         return next_id + 1

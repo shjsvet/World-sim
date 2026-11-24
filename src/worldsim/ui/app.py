@@ -16,7 +16,11 @@ from worldsim.engine.engine import SimulationEngine
 from worldsim.engine.metrics import FactionStats, compute_faction_stats
 from worldsim.engine.rules import Rule
 from worldsim.engine.rules.ai_ruler import AIRulerRule
-from worldsim.engine.rules.army import ArmyMovementRule
+from worldsim.engine.rules.army import ArmyMovementRule, FrontlineRule, OccupationRule
+from worldsim.engine.rules.diplomacy import DiplomacyRule
+from worldsim.engine.rules.economy import EconomyRule
+from worldsim.engine.rules.expansion import ExpansionRule
+from worldsim.engine.rules.extraction import ExtractionRule
 from worldsim.engine.rules.magic import AcademyRule, MagicResearchRule, ManaRule
 from worldsim.engine.rules.march import MarchRule
 from worldsim.engine.rules.orders import StandingOrderRule
@@ -24,10 +28,13 @@ from worldsim.engine.rules.population import PopulationGrowthRule
 from worldsim.engine.rules.random_events import FamineRule, PlagueRule
 from worldsim.engine.rules.religion import ReligionFoundingRule
 from worldsim.engine.rules.social import HappinessRule, UnrestRule, UrbanizationRule
+from worldsim.engine.rules.trade import TradeRule
 from worldsim.engine.rules.trade_offers import TradeOfferRule
+from worldsim.engine.rules.war import WarResolutionRule
 from worldsim.generator.world import create_world
 from worldsim.ui.ai_panel import (
     create_ai_world,
+    create_offline_world,
     manual_config,
     safe_client,
     write_chapter_for_engine,
@@ -63,6 +70,14 @@ _DEFAULT_RULES: list[Rule] = [
     ManaRule(),
     AcademyRule(),
     MagicResearchRule(),
+    EconomyRule(),
+    ExtractionRule(),
+    ExpansionRule(),
+    FrontlineRule(),
+    OccupationRule(),
+    WarResolutionRule(),
+    DiplomacyRule(),
+    TradeRule(),
     AIRulerRule(),
     StandingOrderRule(),
     TradeOfferRule(),
@@ -882,11 +897,12 @@ def _render_ai(engine: SimulationEngine) -> None:
     """Вкладка ИИ: генерация мира по описанию и глава летописи."""
     st.subheader("Мир по описанию")
     st.caption(
-        "ИИ опционален: без ключей провайдера доступны ручная конфигурация и fallback-глава."
+        "С LLM мир проектируется по описанию. Без ключей культуры и число "
+        "фракций разбираются из текста локально."
     )
     description = st.text_area(
         "Описание мира",
-        value="Мир двух фракций: северные милитаристы и южные торговцы.",
+        value="Мир двух фракций: северные люди и южные эльфы.",
         height=120,
     )
     config = engine.state.config
@@ -899,15 +915,16 @@ def _render_ai(engine: SimulationEngine) -> None:
         plague_chance=config.plague_chance,
         magic_level=config.magic_level,
     )
-    with st.expander("Ручная конфигурация (fallback)"):
+    with st.expander("Базовые параметры (fallback)"):
         st.json(fallback.model_dump())
 
     if st.button("Создать мир по описанию", type="primary"):
         client, error = safe_client()
         if client is None:
-            st.session_state["engine"] = build_engine(create_world(fallback))
+            offline, _blueprint, path = create_offline_world(description, fallback)
+            st.session_state["engine"] = build_engine(offline)
             st.session_state["world_notice"] = (
-                f"ИИ недоступен: {error}. Мир создан по ручной конфигурации."
+                f"ИИ недоступен: {error}. Мир собран локально по описанию, черновик: {path}"
             )
             st.rerun()
         else:
@@ -915,9 +932,11 @@ def _render_ai(engine: SimulationEngine) -> None:
                 try:
                     world, _blueprint, path = create_ai_world(description, client)
                 except Exception as exc:
-                    st.session_state["engine"] = build_engine(create_world(fallback))
+                    offline, _blueprint, offline_path = create_offline_world(description, fallback)
+                    st.session_state["engine"] = build_engine(offline)
                     st.session_state["world_notice"] = (
-                        f"ИИ не смог создать мир: {exc}. Создан мир по ручной конфигурации."
+                        f"ИИ не смог создать мир: {exc}. "
+                        f"Мир собран локально по описанию: {offline_path}"
                     )
                     st.rerun()
                 else:

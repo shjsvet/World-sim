@@ -6,7 +6,7 @@ from pathlib import Path
 
 from worldsim.ai.chronicler import ChronicleWriter, save_chapter
 from worldsim.ai.client import AIUnavailableError, LLMClient, create_client
-from worldsim.ai.world_builder import WorldBlueprint, apply_config
+from worldsim.ai.world_builder import WorldBlueprint, apply_config, apply_offline_config
 from worldsim.core.state import WorldConfig, WorldState
 from worldsim.engine.engine import SimulationEngine
 from worldsim.generator.world import create_world
@@ -50,6 +50,16 @@ def create_ai_world(
 ) -> tuple[WorldState, WorldBlueprint, Path]:
     """Создаёт мир по описанию через ИИ."""
     return apply_config(description, client, root=root)
+
+
+def create_offline_world(
+    description: str,
+    base_config: WorldConfig,
+    *,
+    root: Path | None = None,
+) -> tuple[WorldState, WorldBlueprint, Path]:
+    """Создаёт мир по описанию без ИИ, разбирая культуры из текста."""
+    return apply_offline_config(description, base_config, root=root)
 
 
 def manual_world(

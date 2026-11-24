@@ -29,7 +29,7 @@ def run_ai_year(
     client: LLMClient | None = None,
 ) -> WorldState:
     """Проводит один год с ИИ-правителями (LLM или fallback)."""
-    return AIRulerOrchestrator(client).run_year(engine)
+    return AIRulerOrchestrator(client, auto_chat=True).run_year(engine)
 
 
 def open_diplomacy(

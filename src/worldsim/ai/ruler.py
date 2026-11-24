@@ -25,6 +25,7 @@ class RulerAction(StrEnum):
     MOVE_ARMY = "move_army"
     FOUND_RELIGION = "found_religion"
     ISSUE_ORDER = "issue_order"
+    DECLARE_WAR = "declare_war"
     HOLD = "hold"
 
 
@@ -164,6 +165,15 @@ def fallback_decision(state: WorldState, faction: Faction) -> RulerDecision:
             confidence=0.6,
         )
 
+    war_target = _war_target(state, faction)
+    if war_target is not None and faction.aggressiveness >= 0.4 and state.year % 2 == 0:
+        return RulerDecision(
+            action=RulerAction.DECLARE_WAR,
+            target_tile_id=war_target,
+            thought=("Сосед слабее, а армия готова — пора расширить владения силой."),
+            confidence=0.7,
+        )
+
     has_order = any(
         order.faction_id == faction.id and order.years_left > 0 for order in state.standing_orders
     )
@@ -181,6 +191,32 @@ def fallback_decision(state: WorldState, faction: Faction) -> RulerDecision:
         thought="Долгосрочный приказ уже выполняется — продолжаю накапливать силы.",
         confidence=0.4,
     )
+
+
+def _war_target(state: WorldState, faction: Faction) -> int | None:
+    """Ищет соседний тайл другой фракции без войны или перемирия."""
+    for tile in state.map.tiles:
+        if tile.owner_id != faction.id:
+            continue
+        for neighbor in state.map.neighbors(tile.x, tile.y):
+            if neighbor.owner_id is None or neighbor.owner_id == faction.id:
+                continue
+            if _has_conflict(state, faction.id, neighbor.owner_id):
+                continue
+            return neighbor.id
+    return None
+
+
+def _has_conflict(state: WorldState, first_id: int, second_id: int) -> bool:
+    """Проверяет активную войну или действующее перемирие."""
+    for war in state.wars:
+        if {war.attacker_id, war.defender_id} != {first_id, second_id}:
+            continue
+        if war.active:
+            return True
+        if war.truce_until_year is not None and war.truce_until_year >= state.year:
+            return True
+    return False
 
 
 def _trade_opportunity(

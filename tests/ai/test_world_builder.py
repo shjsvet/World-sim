@@ -12,6 +12,8 @@ from worldsim.ai.client import AIUnavailableError, Message
 from worldsim.ai.world_builder import (
     SYSTEM_PROMPT,
     apply_config,
+    apply_offline_config,
+    blueprint_from_description,
     build_blueprint,
     build_config,
 )
@@ -135,6 +137,53 @@ def test_invalid_color_is_retried() -> None:
     assert len(client.calls) == 2
 
 
+def test_cultures_are_applied_to_factions_and_tiles(tmp_path: Path) -> None:
+    """Культуры из описания попадают во фракции и их территории."""
+    factions = [
+        {
+            "name": "Север",
+            "ideology": "militarist",
+            "culture": "Люди",
+            "color": "#AA0000",
+        },
+        {
+            "name": "Юг",
+            "ideology": "mercantile",
+            "culture": "Эльфы",
+            "color": "#00AA00",
+        },
+    ]
+    client = FakeClient([as_json(valid_payload(factions=factions))])
+
+    world, _, _ = apply_config("северные люди и южные эльфы", client, root=tmp_path)
+
+    assert [faction.culture for faction in world.factions] == ["Люди", "Эльфы"]
+    for faction in world.factions:
+        owned = [tile for tile in world.map.tiles if tile.owner_id == faction.id]
+        assert owned
+        assert all(tile.culture == faction.culture for tile in owned)
+
+
+def test_invalid_culture_is_retried() -> None:
+    """Неизвестная культура отклоняется и запрашивается повтор."""
+    bad = valid_payload(
+        factions=[
+            {
+                "name": "Север",
+                "ideology": "militarist",
+                "culture": "Хоббиты",
+                "color": "#AA0000",
+            }
+        ]
+    )
+    client = FakeClient([as_json(bad), as_json(valid_payload())])
+
+    blueprint = build_blueprint("описание", client)
+
+    assert len(client.calls) == 2
+    assert blueprint.config.size == 8
+
+
 def test_apply_config_creates_world_and_saves(tmp_path: Path) -> None:
     """apply_config создаёт мир, применяет фракции и сохраняет черновик."""
     client = FakeClient([as_json(valid_payload())])
@@ -191,3 +240,33 @@ def test_saved_blueprint_contains_factions(tmp_path: Path) -> None:
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert [item["name"] for item in saved["factions"]] == ["Север", "Юг"]
     assert saved["factions"][0]["ideology"] == "militarist"
+
+
+def test_offline_description_reads_cultures() -> None:
+    """Без ИИ описание «люди и эльфы» даёт нужные культуры."""
+    blueprint = blueprint_from_description(
+        "Мир двух фракций: северные люди и южные эльфы.",
+        WorldConfig(seed=42, size=32),
+    )
+
+    assert [spec.culture for spec in blueprint.factions] == ["Люди", "Эльфы"]
+    assert [spec.name for spec in blueprint.factions] == [
+        "северные люди",
+        "южные эльфы",
+    ]
+
+
+def test_offline_world_applies_cultures_to_tiles(tmp_path: Path) -> None:
+    """Локальный мир по описанию меняет культуры фракций и тайлов."""
+    world, _, path = apply_offline_config(
+        "Мир двух фракций: северные люди и южные эльфы.",
+        WorldConfig(seed=42, size=32),
+        root=tmp_path,
+    )
+
+    assert [faction.culture for faction in world.factions] == ["Люди", "Эльфы"]
+    for faction in world.factions:
+        owned = [tile for tile in world.map.tiles if tile.owner_id == faction.id]
+        assert owned
+        assert all(tile.culture == faction.culture for tile in owned)
+    assert path.exists()

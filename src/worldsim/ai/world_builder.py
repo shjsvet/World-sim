@@ -13,11 +13,48 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from worldsim.ai.client import AIUnavailableError, LLMClient, Message
 from worldsim.core.faction import Faction, Ideology
+from worldsim.core.geography import WorldMap
 from worldsim.core.state import WorldConfig, WorldState
+from worldsim.generator.factions import CULTURES
 from worldsim.generator.world import create_world
 
 _IDEOLOGIES = ", ".join(ideology.value for ideology in Ideology)
+_CULTURES = ", ".join(CULTURES)
 _COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+_CULTURE_KEYWORDS: tuple[tuple[str, str], ...] = (
+    ("люд", "Люди"),
+    ("эльф", "Эльфы"),
+    ("орк", "Орки"),
+    ("гном", "Гномы"),
+    ("нежит", "Нежить"),
+    ("human", "Люди"),
+    ("elf", "Эльфы"),
+    ("orc", "Орки"),
+    ("dwarf", "Гномы"),
+    ("undead", "Нежить"),
+)
+
+_COUNT_WORDS: dict[str, int] = {
+    "1": 1,
+    "один": 1,
+    "одна": 1,
+    "одной": 1,
+    "one": 1,
+    "2": 2,
+    "два": 2,
+    "две": 2,
+    "двух": 2,
+    "two": 2,
+    "3": 3,
+    "три": 3,
+    "трех": 3,
+    "трёх": 3,
+    "three": 3,
+    "4": 4,
+    "четыре": 4,
+    "four": 4,
+}
 
 SYSTEM_PROMPT = (
     "Ты — генератор конфигурации мира. Верни строго один JSON-объект без "
@@ -25,7 +62,9 @@ SYSTEM_PROMPT = (
     "initial_factions (0..4), aggression (0..1), growth_rate (>=0), "
     "plague_chance (0..1), magic_level (0..1), factions — массив объектов "
     '{"name": строка, "ideology": одно из [' + _IDEOLOGIES + "], "
-    '"color": "#RRGGBB"}.'
+    '"culture": одно из [' + _CULTURES + '], "color": "#RRGGBB"}. '
+    "Число фракций должно совпадать с initial_factions; культуры и названия "
+    "должны соответствовать описанию пользователя."
 )
 
 
@@ -37,6 +76,7 @@ class FactionSpec(BaseModel):
     name: str = Field(min_length=1, max_length=40)
     ideology: Ideology
     color: str
+    culture: str | None = None
 
     @field_validator("color")
     @classmethod
@@ -45,6 +85,17 @@ class FactionSpec(BaseModel):
         if not _COLOR_RE.fullmatch(value):
             raise ValueError("цвет должен быть в формате #RRGGBB")
         return value.upper()
+
+    @field_validator("culture")
+    @classmethod
+    def _validate_culture(cls, value: str | None) -> str | None:
+        """Проверяет культуру из известного набора."""
+        if value is None or not value.strip():
+            return None
+        for culture in CULTURES:
+            if culture.casefold() == value.strip().casefold():
+                return culture
+        raise ValueError(f"неизвестная культура: {value}")
 
 
 class _ConfigDraft(BaseModel):
@@ -125,17 +176,75 @@ def apply_config(
     *,
     root: Path | None = None,
 ) -> tuple[WorldState, WorldBlueprint, Path]:
-    """Создаёт мир по описанию, применяет фракции ИИ и сохраняет черновик.
-
-    Имена и цвета фракций проверяются; при конфликте (повтор имени или цвета,
-    невалидное значение) остаётся сгенерированная фракция.
-    """
+    """Создаёт мир по описанию, применяет фракции ИИ и сохраняет черновик."""
     blueprint = build_blueprint(user_prompt, client)
-    world = create_world(blueprint.config)
+    updated = _apply_blueprint(create_world(blueprint.config), blueprint)
+    path = save_blueprint(user_prompt, blueprint, root=root)
+    return updated, blueprint, path
 
+
+def apply_offline_config(
+    user_prompt: str,
+    base_config: WorldConfig | None = None,
+    *,
+    root: Path | None = None,
+) -> tuple[WorldState, WorldBlueprint, Path]:
+    """Создаёт мир по описанию без ИИ: культуры и число фракций из текста."""
+    config = base_config if base_config is not None else WorldConfig(seed=42, size=64)
+    blueprint = blueprint_from_description(user_prompt, config)
+    updated = _apply_blueprint(create_world(blueprint.config), blueprint)
+    path = save_blueprint(user_prompt, blueprint, root=root)
+    return updated, blueprint, path
+
+
+def blueprint_from_description(
+    user_prompt: str,
+    base_config: WorldConfig | None = None,
+) -> WorldBlueprint:
+    """Собирает blueprint эвристически, когда LLM недоступен."""
+    base = base_config if base_config is not None else WorldConfig(seed=42, size=64)
+    specs = _description_factions(user_prompt)
+    count = _description_count(user_prompt)
+    if count is None:
+        count = len(specs) or base.initial_factions
+    count = max(0, min(4, count))
+
+    colors = ("#AA0000", "#00AA00", "#0000AA", "#AA00AA")
+    factions: list[FactionSpec] = []
+    used_names: set[str] = set()
+    for index in range(count):
+        if index < len(specs):
+            name, culture = specs[index]
+        else:
+            culture = CULTURES[index % len(CULTURES)]
+            name = culture
+        name = name[:40]
+        if name.casefold() in used_names:
+            suffix = f" {index + 1}"
+            name = f"{name[: 40 - len(suffix)]}{suffix}"
+        used_names.add(name.casefold())
+        factions.append(
+            FactionSpec(
+                name=name,
+                ideology=Ideology.MILITARIST,
+                color=colors[index % len(colors)],
+                culture=culture,
+            )
+        )
+    config = base.model_copy(update={"initial_factions": count})
+    return WorldBlueprint(
+        config=config,
+        factions=tuple(factions),
+        raw={"offline": True, "description": user_prompt},
+    )
+
+
+def _apply_blueprint(world: WorldState, blueprint: WorldBlueprint) -> WorldState:
+    """Применяет имена, цвета и культуры blueprint к сгенерированному миру."""
     factions: list[Faction] = []
     used_names: set[str] = set()
     used_colors: set[str] = set()
+    culture_changes: dict[int, str] = {}
     for index, faction in enumerate(world.factions):
         candidate: Faction | None = None
         if index < len(blueprint.factions):
@@ -146,17 +255,55 @@ def apply_config(
                         name=spec.name,
                         color=spec.color,
                         ideology=spec.ideology,
+                        culture=spec.culture or faction.culture,
                     )
                 except ValidationError:
                     candidate = None
         chosen = candidate if candidate is not None else faction
         used_names.add(chosen.name)
         used_colors.add(chosen.color)
+        if chosen.culture != faction.culture:
+            culture_changes[chosen.id] = chosen.culture
         factions.append(chosen)
 
     updated = world.evolve(factions=tuple(factions))
-    path = save_blueprint(user_prompt, blueprint, root=root)
-    return updated, blueprint, path
+    if culture_changes:
+        tiles = tuple(
+            tile.model_copy(update={"culture": culture_changes[tile.owner_id]})
+            if tile.owner_id is not None and tile.owner_id in culture_changes
+            else tile
+            for tile in updated.map.tiles
+        )
+        updated = updated.evolve(map=WorldMap(size=updated.map.size, tiles=tiles))
+    return updated
+
+
+def _description_factions(description: str) -> list[tuple[str, str]]:
+    """Ищет культуры и названия фракций в свободном тексте."""
+    segments = [
+        part.strip(" .")
+        for part in re.split(r"[,.:;()]|\s+и\s+|\s+and\s+", description)
+        if part.strip(" .")
+    ]
+    found: list[tuple[str, str]] = []
+    for segment in segments:
+        lower = segment.casefold()
+        for keyword, culture in _CULTURE_KEYWORDS:
+            if keyword in lower:
+                found.append((segment[:40], culture))
+                break
+    if found:
+        return found
+    return [(culture, culture) for culture in CULTURES]
+
+
+def _description_count(description: str) -> int | None:
+    """Определяет число фракций по словам и цифрам."""
+    tokens = re.findall(r"[a-zа-я0-9-]+", description.casefold())
+    for token in tokens:
+        if token in _COUNT_WORDS:
+            return _COUNT_WORDS[token]
+    return None
 
 
 def save_blueprint(

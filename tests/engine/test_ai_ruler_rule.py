@@ -277,3 +277,40 @@ def test_unknown_faction_command_is_ignored() -> None:
     outcome = run_rule(state, AICommand(5, decision(RulerAction.RECRUIT, amount=5)))
 
     assert outcome.faction_updates == ()  # type: ignore[attr-defined]
+
+
+def test_declare_war() -> None:
+    """ИИ объявляет войну соседней фракции."""
+    first = make_faction()
+    second = make_faction(1, capital=1)
+    state = make_state(
+        factions=(first, second),
+        overrides={0: {"owner_id": 0}, 1: {"owner_id": 1}},
+    )
+
+    outcome = run_rule(
+        state,
+        AICommand(0, decision(RulerAction.DECLARE_WAR, target=1)),
+    )
+
+    assert outcome.wars is not None  # type: ignore[attr-defined]
+    assert outcome.wars[0].active  # type: ignore[attr-defined]
+    assert outcome.wars[0].attacker_id == 0  # type: ignore[attr-defined]
+    assert outcome.wars[0].defender_id == 1  # type: ignore[attr-defined]
+    assert any(
+        event.type is EventType.WAR
+        for event in outcome.events  # type: ignore[attr-defined]
+    )
+
+
+def test_declare_war_ignores_same_faction() -> None:
+    """Нельзя объявить войну самому себе."""
+    faction = make_faction()
+    state = make_state(factions=(faction,), overrides={0: {"owner_id": 0}})
+
+    outcome = run_rule(
+        state,
+        AICommand(0, decision(RulerAction.DECLARE_WAR, target=0)),
+    )
+
+    assert outcome.wars is None  # type: ignore[attr-defined]

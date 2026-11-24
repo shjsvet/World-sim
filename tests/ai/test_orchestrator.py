@@ -222,6 +222,25 @@ def test_no_rulers_still_advances_year() -> None:
     assert result.thoughts == ()
 
 
+def test_auto_chat_records_message() -> None:
+    """Автопереписка сохраняет сообщение между фракциями."""
+    first = make_faction(0, capital=0)
+    second = make_faction(1, capital=1)
+    state = make_state(
+        factions=(first, second),
+        rulers=(
+            RulerProfile(faction_id=0, name="Король"),
+            RulerProfile(faction_id=1, name="Вождь"),
+        ),
+    )
+    engine = make_engine(state)
+
+    result = AIRulerOrchestrator(FakeClient(), auto_chat=True).run_year(engine)
+
+    assert len(result.diplomatic_messages) == 1
+    assert result.diplomatic_messages[0].year == 0
+
+
 def test_order_executes_on_skipped_year() -> None:
     """Приказ работает и в год, когда ИИ не принимает решение."""
     faction = make_faction(0, capital=0, treasury=100.0)

@@ -19,9 +19,15 @@ class AIRulerOrchestrator:
     симуляция остаётся воспроизводимой.
     """
 
-    def __init__(self, client: LLMClient | None = None) -> None:
+    def __init__(
+        self,
+        client: LLMClient | None = None,
+        *,
+        auto_chat: bool = False,
+    ) -> None:
         self._client = client
         self._ruler = LLMRuler(client) if client is not None else None
+        self._auto_chat_enabled = auto_chat
 
     def run_year(self, engine: SimulationEngine) -> WorldState:
         """Принимает решения, выполняет шаг и записывает мысли правителей."""
@@ -52,10 +58,25 @@ class AIRulerOrchestrator:
             next_thought_id += 1
 
         engine.queue_decisions(commands)
+        messages = self._auto_chat(engine.state) if self._auto_chat_enabled else ()
         engine.step()
         if thoughts:
             engine.record_thoughts(tuple(thoughts))
+        if messages:
+            engine.record_messages(messages)
         return engine.state
+
+    def _auto_chat(self, state: WorldState) -> tuple[DiplomaticMessage, ...]:
+        """Раз в три года открывает канал между двумя фракциями."""
+        if len(state.factions) < 2 or state.year % 3 != 0:
+            return ()
+        if any(message.year == state.year for message in state.diplomatic_messages):
+            return ()
+        pair = _dialogue_pair(state)
+        if pair is None:
+            return ()
+        sender, recipient, topic = pair
+        return DiplomacyChat(self._client).open_channel(sender, recipient, topic, state)
 
     def open_channel(
         self,
@@ -81,3 +102,26 @@ class AIRulerOrchestrator:
         if self._ruler is not None:
             return self._ruler.decide(state, faction)
         return fallback_decision(state, faction)
+
+
+def _dialogue_pair(
+    state: WorldState,
+) -> tuple[Faction, Faction, str] | None:
+    """Выбирает пару для автоматической переписки и тему."""
+    factions = sorted(state.factions, key=lambda faction: faction.id)
+    for war in state.wars:
+        if not war.active:
+            continue
+        first = next((item for item in factions if item.id == war.attacker_id), None)
+        second = next((item for item in factions if item.id == war.defender_id), None)
+        if first is not None and second is not None:
+            return first, second, "peace"
+    for first in factions:
+        for second in factions:
+            if first.id == second.id:
+                continue
+            if first.food_stockpile > second.food_stockpile + 40:
+                return first, second, "trade"
+    if len(factions) >= 2:
+        return factions[0], factions[1], "offer"
+    return None
