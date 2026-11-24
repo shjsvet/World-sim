@@ -11,10 +11,11 @@ from worldsim.ai.ruler import RulerAction, RulerDecision
 from worldsim.core.chronicle import Chronicle
 from worldsim.core.faction import Faction, Ideology
 from worldsim.core.geography import Biome, RegionData, WorldMap
-from worldsim.core.rulers import RulerProfile
+from worldsim.core.rulers import RulerProfile, StandingOrder
 from worldsim.core.state import WorldConfig, WorldState
 from worldsim.engine.engine import SimulationEngine
 from worldsim.engine.rules.ai_ruler import AIRulerRule
+from worldsim.engine.rules.orders import StandingOrderRule
 
 
 class FakeClient:
@@ -70,6 +71,7 @@ def make_state(
     *,
     factions: tuple[Faction, ...],
     rulers: tuple[RulerProfile, ...],
+    orders: tuple[StandingOrder, ...] = (),
 ) -> WorldState:
     """Создаёт мир с фракциями и правителями."""
     capitals = {faction.capital_tile_id: faction.id for faction in factions}
@@ -94,6 +96,7 @@ def make_state(
         map=WorldMap(size=4, tiles=tuple(tiles)),
         factions=factions,
         rulers=rulers,
+        standing_orders=orders,
     )
 
 
@@ -217,6 +220,37 @@ def test_no_rulers_still_advances_year() -> None:
 
     assert result.year == 1
     assert result.thoughts == ()
+
+
+def test_order_executes_on_skipped_year() -> None:
+    """Приказ работает и в год, когда ИИ не принимает решение."""
+    faction = make_faction(0, capital=0, treasury=100.0)
+    order = StandingOrder(
+        id=0,
+        faction_id=0,
+        kind="accumulate_gold",
+        payload={"amount": 10},
+        years_left=3,
+        created_year=0,
+    )
+    state = make_state(
+        factions=(faction,),
+        rulers=(RulerProfile(faction_id=0, name="Король", decision_interval=2),),
+        orders=(order,),
+    )
+    engine = SimulationEngine(
+        [StandingOrderRule(), AIRulerRule()],
+        Chronicle(),
+        initial_state=state,
+    )
+    orchestrator = AIRulerOrchestrator(FakeClient())
+
+    orchestrator.run_year(engine)
+    orchestrator.run_year(engine)
+
+    assert engine.state.factions[0].treasury == 120.0
+    assert engine.state.standing_orders[0].years_left == 1
+    assert len(engine.state.thoughts) == 1
 
 
 def test_same_input_gives_same_state() -> None:

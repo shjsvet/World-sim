@@ -16,6 +16,7 @@ _ACTION_LABELS = {
     "offer_trade": "Торговое предложение",
     "move_army": "Поход армии",
     "found_religion": "Новая религия",
+    "issue_order": "Долгосрочный приказ",
     "hold": "Бездействие",
 }
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from worldsim.ai.client import AIUnavailableError, LLMClient, Message
 from worldsim.core.faction import Faction
@@ -24,6 +24,7 @@ class RulerAction(StrEnum):
     OFFER_TRADE = "offer_trade"
     MOVE_ARMY = "move_army"
     FOUND_RELIGION = "found_religion"
+    ISSUE_ORDER = "issue_order"
     HOLD = "hold"
 
 
@@ -38,6 +39,15 @@ class RulerDecision(BaseModel):
     message: str = Field(default="", max_length=500)
     thought: str = Field(min_length=1, max_length=1000)
     confidence: float = Field(default=0.5, ge=0, le=1)
+    order_kind: str = Field(default="", max_length=64)
+    order_years: int = Field(default=0, ge=0, le=50)
+
+    @model_validator(mode="after")
+    def _validate_order(self) -> RulerDecision:
+        """Приказ должен иметь непустой вид."""
+        if self.action is RulerAction.ISSUE_ORDER and not self.order_kind.strip():
+            raise ValueError("для ISSUE_ORDER нужен order_kind")
+        return self
 
 
 SYSTEM_PROMPT = (
@@ -47,8 +57,9 @@ SYSTEM_PROMPT = (
     + ", ".join(action.value for action in RulerAction)
     + '), "target_tile_id" (целое или null), "amount" (целое >= 0), '
     '"message" (строка), "thought" (1–1000 символов, объяснение решения), '
-    '"confidence" (0..1). Действуй только в интересах своей фракции и не '
-    "выдумывай факты, которых нет в переданных данных."
+    '"confidence" (0..1), "order_kind" (для ISSUE_ORDER: accumulate_gold, '
+    'recruit или defend), "order_years" (1–50). Действуй только в интересах '
+    "своей фракции и не выдумывай факты, которых нет в переданных данных."
 )
 
 
@@ -139,9 +150,21 @@ def fallback_decision(state: WorldState, faction: Faction) -> RulerDecision:
             confidence=0.7,
         )
 
+    has_order = any(
+        order.faction_id == faction.id and order.years_left > 0 for order in state.standing_orders
+    )
+    if not has_order:
+        return RulerDecision(
+            action=RulerAction.ISSUE_ORDER,
+            order_kind="accumulate_gold",
+            order_years=3,
+            thought="Сейчас нет срочных угроз — велю три года копить золото.",
+            confidence=0.4,
+        )
+
     return RulerDecision(
         action=RulerAction.HOLD,
-        thought="Сейчас нет срочных угроз — продолжаю накапливать силы.",
+        thought="Долгосрочный приказ уже выполняется — продолжаю накапливать силы.",
         confidence=0.4,
     )
 
@@ -196,5 +219,14 @@ def _faction_context(state: WorldState, faction: Faction) -> dict[str, object]:
             ],
         },
         "wars": wars,
+        "standing_orders": [
+            {
+                "kind": order.kind,
+                "years_left": order.years_left,
+                "target_tile_id": order.target_tile_id,
+            }
+            for order in state.standing_orders
+            if order.faction_id == faction.id
+        ],
         "allowed_actions": [action.value for action in RulerAction],
     }

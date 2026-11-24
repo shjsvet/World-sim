@@ -12,6 +12,7 @@ from worldsim.core.magic import (
     ACADEMY_MIN_DENSITY,
     MagicAcademy,
 )
+from worldsim.core.rulers import StandingOrder
 from worldsim.core.state import WorldState
 from worldsim.engine.rules import (
     AICommand,
@@ -24,6 +25,7 @@ from worldsim.engine.rules import (
 RECRUITMENT_COST = 2.0
 DEFAULT_EXTRACTION = 20
 DEFAULT_REDISTRIBUTION = 10
+ORDER_KINDS = frozenset({"accumulate_gold", "recruit", "defend"})
 
 
 class AIRulerRule:
@@ -38,6 +40,8 @@ class AIRulerRule:
         working = dict(original)
         academies = list(state.academies)
         next_academy_id = max((item.id for item in academies), default=-1) + 1
+        orders = list(state.standing_orders)
+        next_order_id = max((item.id for item in orders), default=-1) + 1
         tile_updates: list[TileUpdate] = []
         events: list[Event] = []
 
@@ -78,12 +82,23 @@ class AIRulerRule:
                     events,
                     ctx.year,
                 )
+            elif action is RulerAction.ISSUE_ORDER:
+                next_order_id = self._issue_order(
+                    state,
+                    faction,
+                    command,
+                    orders,
+                    events,
+                    next_order_id,
+                    ctx.year,
+                )
 
         return RuleOutcome(
             tile_updates=tuple(tile_updates),
             faction_updates=_faction_updates(original, working),
             events=tuple(events),
             academies=tuple(academies),
+            standing_orders=tuple(orders),
         )
 
     @staticmethod
@@ -272,6 +287,55 @@ class AIRulerRule:
                 severity=0.3,
             )
         )
+
+    @staticmethod
+    def _issue_order(
+        state: WorldState,
+        faction: Faction,
+        command: AICommand,
+        orders: list[StandingOrder],
+        events: list[Event],
+        next_id: int,
+        year: int,
+    ) -> int:
+        """Создаёт долгосрочный приказ правителя."""
+        kind = command.decision.order_kind.strip()
+        if kind not in ORDER_KINDS:
+            return next_id
+        years = command.decision.order_years
+        if years <= 0:
+            return next_id
+        target = command.decision.target_tile_id
+        if target is not None:
+            if target >= len(state.map.tiles):
+                return next_id
+            if state.map.by_id(target).owner_id != faction.id:
+                return next_id
+        payload: dict[str, object] = {}
+        if command.decision.amount > 0:
+            payload["amount"] = command.decision.amount
+        orders.append(
+            StandingOrder(
+                id=next_id,
+                faction_id=faction.id,
+                kind=kind,
+                target_tile_id=target,
+                payload=payload,
+                years_left=years,
+                created_year=year,
+            )
+        )
+        events.append(
+            Event(
+                id=0,
+                year=year,
+                type=EventType.CUSTOM,
+                summary=f"ИИ-правитель фракции {faction.id} издал приказ {kind}",
+                faction_ids=(faction.id,),
+                severity=0.4,
+            )
+        )
+        return next_id + 1
 
 
 def _faction_updates(

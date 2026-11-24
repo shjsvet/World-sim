@@ -148,7 +148,7 @@ def test_unknown_action_falls_back() -> None:
 
     decision = LLMRuler(FakeClient(answer)).decide(state, faction)
 
-    assert decision.action is RulerAction.HOLD
+    assert decision.action is RulerAction.ISSUE_ORDER
 
 
 def test_empty_thought_is_rejected() -> None:
@@ -164,7 +164,7 @@ def test_empty_thought_is_rejected() -> None:
 
     decision = LLMRuler(FakeClient(answer)).decide(state, faction)
 
-    assert decision.action is RulerAction.HOLD
+    assert decision.action is RulerAction.ISSUE_ORDER
     assert decision.thought
 
 
@@ -189,14 +189,16 @@ def test_fallback_for_low_morale() -> None:
     assert decision.thought
 
 
-def test_fallback_without_emergency_is_hold() -> None:
-    """Без угроз правитель просто ждёт."""
+def test_fallback_without_emergency_issues_order() -> None:
+    """Без угроз правитель отдаёт долгосрочный приказ."""
     faction = make_faction()
     state = make_state(faction, overrides={0: {"owner_id": 0}})
 
     decision = fallback_decision(state, faction)
 
-    assert decision.action is RulerAction.HOLD
+    assert decision.action is RulerAction.ISSUE_ORDER
+    assert decision.order_kind == "accumulate_gold"
+    assert decision.order_years > 0
 
 
 def test_target_outside_map_falls_back() -> None:
@@ -215,7 +217,7 @@ def test_target_outside_map_falls_back() -> None:
 
     decision = LLMRuler(FakeClient(answer)).decide(state, faction)
 
-    assert decision.action is RulerAction.HOLD
+    assert decision.action is RulerAction.ISSUE_ORDER
 
 
 def test_same_input_gives_same_decision() -> None:
