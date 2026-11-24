@@ -60,25 +60,13 @@ def political_figure(state: WorldState) -> go.Figure:
     factions = {faction.id: faction for faction in state.factions}
     tiles = state.map.tiles
     colors: list[str] = []
-    texts: list[str] = []
     for tile in tiles:
         faction = factions.get(tile.owner_id) if tile.owner_id is not None else None
-        if faction is None:
-            colors.append(NEUTRAL_COLOR)
-            texts.append(
-                f"({tile.x}, {tile.y}) нейтральная территория; население {tile.population}"
-            )
-        else:
-            colors.append(faction.color)
-            texts.append(
-                f"({tile.x}, {tile.y}) {faction.name} ({faction.culture}); "
-                f"население {tile.population}; армия {faction.army_size:.0f}; "
-                f"мощь {faction.military_power:.0f}"
-            )
+        colors.append(faction.color if faction is not None else NEUTRAL_COLOR)
     return _scatter_figure(
         state,
         colors=colors,
-        texts=texts,
+        texts=[_tile_hover(state, tile) for tile in tiles],
         title=f"Политическая карта, год {state.year}",
     )
 
@@ -297,22 +285,21 @@ def _culture_color(tile: RegionData) -> str:
 
 
 def _tile_hover(state: WorldState, tile: RegionData) -> str:
-    """Собирает подробную подсказку тайла."""
+    """Короткая подсказка: владелец, культура, население и биом.
+
+    Полные параметры тайла показываются в блоке «Тайл» под картой.
+    """
     factions = {faction.id: faction for faction in state.factions}
     faction = factions.get(tile.owner_id) if tile.owner_id is not None else None
-    owner = f"{faction.name} ({faction.culture})" if faction is not None else "нейтраль"
-    river = "да" if tile.has_river else "нет"
-    ley = ", лей-линия" if tile.ley_line else ""
+    if faction is None:
+        owner = "нейтральная территория"
+        culture = tile.culture or "—"
+    else:
+        owner = faction.name
+        culture = faction.culture
     return (
-        f"({tile.x}, {tile.y}) {tile.biome.value}; владелец: {owner}; "
-        f"население {tile.population}/{tile.population_capacity}; "
-        f"плодородие {tile.fertility:.0f}; высота {tile.elevation:.0f}; река: {river}; "
-        f"ресурс: {tile.resource_type.value} ({tile.resource_amount:.0f}), "
-        f"запас {tile.resource_depletion:.0f}; инфраструктура {tile.infrastructure:.0f}; "
-        f"счастье {tile.happiness:.0f}; урбанизация {tile.urbanization:.0f}; "
-        f"армия {tile.army_presence}; фортификация {tile.fortification:.0f}; "
-        f"недовольство {tile.unrest:.0f}; "
-        f"мана {tile.mana_density}/{tile.mana_regeneration}{ley}"
+        f"владелец: {owner}; культура: {culture}; "
+        f"население: {tile.population}; биом: {tile.biome.value}"
     )
 
 

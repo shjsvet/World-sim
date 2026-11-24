@@ -53,6 +53,19 @@ def test_hover_text_contains_biome_and_population() -> None:
     assert state.map.tiles[0].biome.value in trace.text[0]
 
 
+def test_hover_is_short_and_has_owner_fields() -> None:
+    """Подсказка содержит только владельца, культуру, население и биом."""
+    state = make_mixed_state()
+    text = tile_layer_figure(state, "happiness").data[0].text[0]
+
+    assert "владелец" in text
+    assert "культура" in text
+    assert "население" in text
+    assert "биом" in text
+    assert "плодородие" not in text
+    assert "фортификация" not in text
+
+
 def test_title_contains_year() -> None:
     """Заголовок карты содержит текущий год."""
     state = make_state()
