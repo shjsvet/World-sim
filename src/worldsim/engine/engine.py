@@ -124,6 +124,8 @@ class SimulationEngine:
             state = state.model_copy(update={"wars": outcome.wars})
         if outcome.trade_routes is not None:
             state = state.model_copy(update={"trade_routes": outcome.trade_routes})
+        if outcome.academies is not None:
+            state = state.model_copy(update={"academies": outcome.academies})
         if not outcome.tile_updates:
             return state
 

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from worldsim.core.diplomacy import War
 from worldsim.core.events import Event
+from worldsim.core.magic import MagicAcademy
 from worldsim.core.resources import TradeRoute
 from worldsim.core.rng import Rng
 from worldsim.core.state import WorldConfig, WorldState
@@ -99,6 +100,7 @@ class RuleOutcome:
     events: tuple[Event, ...] = ()
     wars: tuple[War, ...] | None = None
     trade_routes: tuple[TradeRoute, ...] | None = None
+    academies: tuple[MagicAcademy, ...] | None = None
 
 
 class Rule(Protocol):

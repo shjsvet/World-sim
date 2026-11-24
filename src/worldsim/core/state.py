@@ -12,6 +12,7 @@ from worldsim.core.culture import Culture, Religion
 from worldsim.core.diplomacy import War
 from worldsim.core.faction import Faction
 from worldsim.core.geography import WorldMap
+from worldsim.core.magic import ACADEMY_MIN_DENSITY, MagicAcademy
 from worldsim.core.resources import TradeRoute
 
 
@@ -55,6 +56,7 @@ class WorldState(BaseModel):
         cultures: Культуры мира.
         religions: Религии мира.
         trade_routes: Действующие торговые маршруты.
+        academies: Магические академии.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -67,6 +69,7 @@ class WorldState(BaseModel):
     cultures: tuple[Culture, ...] = ()
     religions: tuple[Religion, ...] = ()
     trade_routes: tuple[TradeRoute, ...] = ()
+    academies: tuple[MagicAcademy, ...] = ()
 
     @model_validator(mode="after")
     def _validate_factions(self) -> Self:
@@ -144,6 +147,23 @@ class WorldState(BaseModel):
             if key in seen_routes:
                 raise ValueError("торговые маршруты должны быть уникальны")
             seen_routes.add(key)
+
+        if len({academy.id for academy in self.academies}) != len(self.academies):
+            raise ValueError("идентификаторы академий должны быть уникальны")
+        academy_tiles: set[int] = set()
+        for academy in self.academies:
+            if academy.faction_id not in faction_ids:
+                raise ValueError("академия ссылается на несуществующую фракцию")
+            if academy.tile_id >= len(self.map.tiles):
+                raise ValueError("академия ссылается на тайл вне карты")
+            tile = self.map.by_id(academy.tile_id)
+            if tile.owner_id != academy.faction_id:
+                raise ValueError("академия должна стоять на тайле своей фракции")
+            if tile.mana_density < ACADEMY_MIN_DENSITY:
+                raise ValueError("для академии нужна плотность маны не ниже 50")
+            if academy.tile_id in academy_tiles:
+                raise ValueError("на одном тайле может быть только одна академия")
+            academy_tiles.add(academy.tile_id)
         return self
 
     def evolve(self, **changes: object) -> WorldState:

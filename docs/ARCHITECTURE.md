@@ -93,6 +93,7 @@ flowchart LR
 | --- | --- | --- |
 | 5 | `EconomyRule` | `engine/rules/economy.py` |
 | 6 | `ExtractionRule` | `engine/rules/extraction.py` |
+| 6 | `ManaRule` | `engine/rules/magic.py` |
 | 7 | `ArmyMovementRule` | `engine/rules/army.py` |
 | 8 | `FrontlineRule` | `engine/rules/army.py` |
 | 9 | `FamineRule` | `engine/rules/random_events.py` |
@@ -102,7 +103,9 @@ flowchart LR
 | 12 | `HappinessRule` | `engine/rules/social.py` |
 | 13 | `UnrestRule` | `engine/rules/social.py` |
 | 14 | `RiotRule` | `engine/rules/social.py` |
+| 14 | `AcademyRule` | `engine/rules/magic.py` |
 | 15 | `SecessionRule` | `engine/rules/social.py` |
+| 15 | `MagicResearchRule` | `engine/rules/magic.py` |
 | 16 | `UrbanizationRule` | `engine/rules/social.py` |
 | 17 | `AssimilationRule` | `engine/rules/culture.py` |
 | 18 | `CultureClashRule` | `engine/rules/culture.py` |
