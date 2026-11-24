@@ -12,6 +12,7 @@ from worldsim.core.culture import Culture, Religion
 from worldsim.core.diplomacy import War
 from worldsim.core.faction import Faction
 from worldsim.core.geography import WorldMap
+from worldsim.core.resources import TradeRoute
 
 
 class WorldConfig(BaseModel):
@@ -53,6 +54,7 @@ class WorldState(BaseModel):
         wars: Активные и завершённые войны.
         cultures: Культуры мира.
         religions: Религии мира.
+        trade_routes: Действующие торговые маршруты.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -64,6 +66,7 @@ class WorldState(BaseModel):
     wars: tuple[War, ...] = ()
     cultures: tuple[Culture, ...] = ()
     religions: tuple[Religion, ...] = ()
+    trade_routes: tuple[TradeRoute, ...] = ()
 
     @model_validator(mode="after")
     def _validate_factions(self) -> Self:
@@ -128,6 +131,19 @@ class WorldState(BaseModel):
             for faction in self.factions:
                 if faction.culture.casefold() not in culture_names:
                     raise ValueError(f"культура фракции {faction.id} отсутствует в списке культур")
+
+        seen_routes: set[tuple[int, int, str]] = set()
+        for route in self.trade_routes:
+            if route.from_tile >= len(self.map.tiles) or route.to_tile >= len(self.map.tiles):
+                raise ValueError("торговый маршрут ссылается на тайл вне карты")
+            key = (
+                min(route.from_tile, route.to_tile),
+                max(route.from_tile, route.to_tile),
+                route.resource.value,
+            )
+            if key in seen_routes:
+                raise ValueError("торговые маршруты должны быть уникальны")
+            seen_routes.add(key)
         return self
 
     def evolve(self, **changes: object) -> WorldState:

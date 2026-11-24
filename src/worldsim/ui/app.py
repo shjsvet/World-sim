@@ -97,6 +97,7 @@ def main() -> None:
         metrics[2].metric("Событий", len(engine.chronicle))
 
         _render_factions(state)
+        _render_trade(state)
         _render_tile_panel(state)
         _render_chronicle(engine)
 
@@ -232,6 +233,25 @@ def _render_factions(state: WorldState) -> None:
     )
     faction = next(item for item in state.factions if item.id == selected)
     st.json(faction.resources)
+
+
+def _render_trade(state: WorldState) -> None:
+    """Показывает действующие торговые маршруты."""
+    if not state.trade_routes:
+        return
+    st.subheader("Торговля")
+    st.dataframe(
+        [
+            {
+                "От": route.from_tile,
+                "К": route.to_tile,
+                "Ресурс": route.resource.value,
+                "Ёмкость": round(route.capacity, 2),
+            }
+            for route in state.trade_routes
+        ],
+        use_container_width=True,
+    )
 
 
 def _render_tile_panel(state: WorldState) -> None:

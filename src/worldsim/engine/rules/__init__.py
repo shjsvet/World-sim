@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Protocol
 
 from worldsim.core.diplomacy import War
 from worldsim.core.events import Event
+from worldsim.core.resources import TradeRoute
 from worldsim.core.rng import Rng
 from worldsim.core.state import WorldConfig, WorldState
 
@@ -36,6 +37,7 @@ class TileUpdate:
         religion_id: Идентификатор религии; ``None`` — не менять.
         assimilation: Уровень ассимиляции; ``None`` — не менять.
         cultural_tension: Культурное напряжение; ``None`` — не менять.
+        resource_depletion: Остаток ресурса в земле; ``None`` — не менять.
     """
 
     tile_id: int
@@ -54,6 +56,7 @@ class TileUpdate:
     religion_id: int | None = None
     assimilation: float | None = None
     cultural_tension: float | None = None
+    resource_depletion: float | None = None
 
 
 @dataclass(frozen=True)
@@ -95,6 +98,7 @@ class RuleOutcome:
     faction_updates: tuple[FactionUpdate, ...] = ()
     events: tuple[Event, ...] = ()
     wars: tuple[War, ...] | None = None
+    trade_routes: tuple[TradeRoute, ...] | None = None
 
 
 class Rule(Protocol):

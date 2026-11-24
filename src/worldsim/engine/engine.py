@@ -117,6 +117,8 @@ class SimulationEngine:
             state = self._apply_faction_updates(state, outcome.faction_updates)
         if outcome.wars is not None:
             state = state.evolve(wars=outcome.wars)
+        if outcome.trade_routes is not None:
+            state = state.evolve(trade_routes=outcome.trade_routes)
         if not outcome.tile_updates:
             return state
 
@@ -152,6 +154,8 @@ class SimulationEngine:
                 data["assimilation"] = update.assimilation
             if update.cultural_tension is not None:
                 data["cultural_tension"] = update.cultural_tension
+            if update.resource_depletion is not None:
+                data["resource_depletion"] = update.resource_depletion
             if update.set_owner:
                 data["owner_id"] = update.owner_id
             tiles[update.tile_id] = RegionData.model_validate(data)
