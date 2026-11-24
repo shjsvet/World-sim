@@ -366,19 +366,31 @@ def _render_trade(state: WorldState) -> None:
 
 
 def _render_tile_panel(state: WorldState) -> None:
-    """Показывает параметры выбранного тайла."""
+    """Показывает тайл по ID или по координатам."""
     st.subheader("Тайл")
+    size = state.map.size
     if "tile_id" not in st.session_state:
         st.session_state["tile_id"] = 0
-    with st.container(border=True):
+    if not 0 <= int(st.session_state["tile_id"]) < len(state.map.tiles):
+        st.session_state["tile_id"] = 0
+    for key in ("coord_x", "coord_y"):
+        if key in st.session_state and not 0 <= int(st.session_state[key]) < size:
+            st.session_state[key] = 0
+    tile = state.map.by_id(int(st.session_state["tile_id"]))
+
+    mode = st.radio(
+        "Как выбрать тайл",
+        ["По ID", "По координатам"],
+        horizontal=True,
+        key="tile_mode",
+    )
+    if mode == "По ID":
         controls = st.columns([1, 1, 3])
         if controls[0].button("Следующий тайл"):
-            st.session_state["tile_id"] = (int(st.session_state["tile_id"]) + 1) % len(
-                state.map.tiles
-            )
-        controls[2].caption(
-            "Подсказка: тайл можно выбрать по идентификатору; на карте наведите курсор на клетку."
-        )
+            next_tile = state.map.by_id((tile.id + 1) % len(state.map.tiles))
+            st.session_state["tile_id"] = next_tile.id
+            st.session_state["coord_x"] = next_tile.x
+            st.session_state["coord_y"] = next_tile.y
         st.number_input(
             "Идентификатор тайла",
             min_value=0,
@@ -387,51 +399,143 @@ def _render_tile_panel(state: WorldState) -> None:
             key="tile_id",
         )
         tile = state.map.by_id(int(st.session_state["tile_id"]))
-        columns = st.columns(4)
-        columns[0].metric("Население", f"{tile.population}/{tile.population_capacity}")
-        columns[1].metric("Плодородие", f"{tile.fertility:.0f}")
-        columns[2].metric("Счастье", f"{tile.happiness:.0f}")
-        columns[3].metric("Недовольство", f"{tile.unrest:.0f}")
-
-        owner = "нейтральный"
-        if tile.owner_id is not None:
-            owner_faction = next(
-                (item for item in state.factions if item.id == tile.owner_id),
-                None,
-            )
-            if owner_faction is not None:
-                owner = owner_faction.name
-        culture = tile.culture or "—"
-        if tile.culture_id is not None:
-            culture_obj = next(
-                (item for item in state.cultures if item.id == tile.culture_id),
-                None,
-            )
-            if culture_obj is not None:
-                culture = culture_obj.name
-        religion = "—"
-        if tile.religion_id is not None:
-            religion_obj = next(
-                (item for item in state.religions if item.id == tile.religion_id),
-                None,
-            )
-            if religion_obj is not None:
-                religion = religion_obj.name
-
-        st.caption(
-            f"Координаты ({tile.x}, {tile.y}) · биом {tile.biome.value} · "
-            f"владелец: {owner} · культура: {culture} · религия: {religion}"
+        controls[2].caption("Координаты тайла — (x, y) от левого верхнего угла карты.")
+    else:
+        if "coord_x" not in st.session_state:
+            st.session_state["coord_x"] = tile.x
+        if "coord_y" not in st.session_state:
+            st.session_state["coord_y"] = tile.y
+        controls = st.columns([1, 1, 2])
+        x = controls[0].number_input(
+            "X",
+            min_value=0,
+            max_value=size - 1,
+            step=1,
+            key="coord_x",
         )
-        st.caption(
-            f"Высота {tile.elevation:.0f} · река: {'да' if tile.has_river else 'нет'} · "
-            f"ресурс: {tile.resource_type.value} "
-            f"({tile.resource_amount:.0f}, запас {tile.resource_depletion:.0f}) · "
-            f"инфраструктура {tile.infrastructure:.0f} · "
-            f"урбанизация {tile.urbanization:.0f} · армия {tile.army_presence} · "
-            f"фортификация {tile.fortification:.0f} · "
-            f"мана {tile.mana_density}/{tile.mana_regeneration}"
-            f"{' · лей-линия' if tile.ley_line else ''}"
+        y = controls[1].number_input(
+            "Y",
+            min_value=0,
+            max_value=size - 1,
+            step=1,
+            key="coord_y",
         )
+        tile = state.map.at(int(x), int(y))
+        st.session_state["tile_id"] = tile.id
+        controls[2].caption(
+            f"Тайл #{tile.id} по координатам ({tile.x}, {tile.y}). "
+            "X и Y можно менять стрелками или вводить вручную."
+        )
+
+    owner = "нейтральный"
+    if tile.owner_id is not None:
+        owner_faction = next(
+            (item for item in state.factions if item.id == tile.owner_id),
+            None,
+        )
+        if owner_faction is not None:
+            owner = owner_faction.name
+
+    culture = tile.culture or "—"
+    if tile.culture_id is not None:
+        culture_obj = next(
+            (item for item in state.cultures if item.id == tile.culture_id),
+            None,
+        )
+        if culture_obj is not None:
+            culture = culture_obj.name
+
+    religion = "—"
+    if tile.religion_id is not None:
+        religion_obj = next(
+            (item for item in state.religions if item.id == tile.religion_id),
+            None,
+        )
+        if religion_obj is not None:
+            religion = religion_obj.name
+
+    with st.container(border=True):
+        st.markdown(f"### Тайл #{tile.id} · координаты ({tile.x}, {tile.y})")
+        st.caption(
+            f"{tile.biome.value} · владелец: {owner} · культура: {culture} · религия: {religion}"
+        )
+        metrics = st.columns(4)
+        metrics[0].metric(
+            "Население",
+            f"{tile.population:,} / {tile.population_capacity:,}".replace(",", " "),
+        )
+        metrics[1].metric("Счастье", f"{tile.happiness:.0f}")
+        metrics[2].metric("Недовольство", f"{tile.unrest:.0f}")
+        metrics[3].metric("Плодородие", f"{tile.fertility:.0f}")
+
+        left, right = st.columns(2)
+        with left:
+            st.markdown("**Природа и ресурсы**")
+            st.dataframe(
+                [
+                    {"Параметр": "Биом", "Значение": tile.biome.value},
+                    {"Параметр": "Климат", "Значение": tile.climate_zone.value},
+                    {"Параметр": "Высота", "Значение": f"{tile.elevation:.0f} м"},
+                    {
+                        "Параметр": "Река",
+                        "Значение": "да" if tile.has_river else "нет",
+                    },
+                    {"Параметр": "Ресурс", "Значение": tile.resource_type.value},
+                    {
+                        "Параметр": "Добыча / запас",
+                        "Значение": (f"{tile.resource_amount:.1f} / {tile.resource_depletion:.1f}"),
+                    },
+                    {
+                        "Параметр": "Инфраструктура",
+                        "Значение": f"{tile.infrastructure:.0f}",
+                    },
+                    {
+                        "Параметр": "Мана (плотность / регенерация)",
+                        "Значение": f"{tile.mana_density} / {tile.mana_regeneration}",
+                    },
+                    {
+                        "Параметр": "Лей-линия",
+                        "Значение": "да" if tile.ley_line else "нет",
+                    },
+                ],
+                width="stretch",
+                hide_index=True,
+            )
+        with right:
+            st.markdown("**Общество и армия**")
+            st.dataframe(
+                [
+                    {"Параметр": "Владелец", "Значение": owner},
+                    {"Параметр": "Культура", "Значение": culture},
+                    {"Параметр": "Религия", "Значение": religion},
+                    {
+                        "Параметр": "Урбанизация",
+                        "Значение": f"{tile.urbanization:.0f}",
+                    },
+                    {
+                        "Параметр": "Армия (гарнизон)",
+                        "Значение": f"{tile.army_presence}",
+                    },
+                    {
+                        "Параметр": "Фортификация",
+                        "Значение": f"{tile.fortification:.0f}",
+                    },
+                    {
+                        "Параметр": "Ассимиляция",
+                        "Значение": f"{tile.assimilation:.2f}",
+                    },
+                    {
+                        "Параметр": "Культурное напряжение",
+                        "Значение": f"{tile.cultural_tension:.0f}",
+                    },
+                    {
+                        "Параметр": "Город",
+                        "Значение": "да" if tile.is_city else "нет",
+                    },
+                ],
+                width="stretch",
+                hide_index=True,
+            )
 
 
 def _render_chronicle(engine: SimulationEngine) -> None:
