@@ -135,6 +135,8 @@ scripts/            # CLI симуляции и проверка докумен�
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — слои, поток данных,
   инварианты, формат `.worldsim/` и таблица правил.
+- [docs/PERFORMANCE.md](docs/PERFORMANCE.md) — замеры шага 256×256,
+  оптимизации и причины недостижения цели 50 мс.
 - [docs/adr/](docs/adr/) — архитектурные решения:
   [0001-src-layout](docs/adr/0001-src-layout.md),
   [0002-frozen-pydantic](docs/adr/0002-frozen-pydantic.md),

@@ -90,7 +90,7 @@ class SimulationEngine:
             for event in outcome.events:
                 self._add_event(event)
 
-        self._state = state.evolve(year=state.year + 1)
+        self._state = state.model_copy(update={"year": state.year + 1})
         return self._state
 
     def run(self, years: int) -> WorldState:
@@ -112,13 +112,18 @@ class SimulationEngine:
         return self.state
 
     def _apply(self, state: WorldState, outcome: RuleOutcome) -> WorldState:
-        """Применяет изменения правила к снимку мира."""
+        """Применяет изменения правила к снимку мира.
+
+        Внутри шага используется быстрый ``model_copy``: правила формируют
+        изменения уже провалидированных полей, а публичные границы
+        (``initial_state``, ``reset``, JSON) валидируются отдельно.
+        """
         if outcome.faction_updates:
             state = self._apply_faction_updates(state, outcome.faction_updates)
         if outcome.wars is not None:
-            state = state.evolve(wars=outcome.wars)
+            state = state.model_copy(update={"wars": outcome.wars})
         if outcome.trade_routes is not None:
-            state = state.evolve(trade_routes=outcome.trade_routes)
+            state = state.model_copy(update={"trade_routes": outcome.trade_routes})
         if not outcome.tile_updates:
             return state
 
@@ -126,42 +131,44 @@ class SimulationEngine:
         for update in outcome.tile_updates:
             if not 0 <= update.tile_id < len(tiles):
                 raise ValueError(f"тайл #{update.tile_id} вне карты")
-            tile = tiles[update.tile_id]
-            data = tile.model_dump()
+            changes: dict[str, object] = {}
             if update.population is not None:
-                data["population"] = update.population
+                changes["population"] = update.population
             if update.population_capacity is not None:
-                data["population_capacity"] = update.population_capacity
+                changes["population_capacity"] = update.population_capacity
             if update.fertility is not None:
-                data["fertility"] = update.fertility
+                changes["fertility"] = update.fertility
             if update.happiness is not None:
-                data["happiness"] = update.happiness
+                changes["happiness"] = update.happiness
             if update.unrest is not None:
-                data["unrest"] = update.unrest
+                changes["unrest"] = update.unrest
             if update.fortification is not None:
-                data["fortification"] = update.fortification
+                changes["fortification"] = update.fortification
             if update.army_presence is not None:
-                data["army_presence"] = update.army_presence
+                changes["army_presence"] = update.army_presence
             if update.urbanization is not None:
-                data["urbanization"] = update.urbanization
+                changes["urbanization"] = update.urbanization
             if update.culture is not None:
-                data["culture"] = update.culture
+                changes["culture"] = update.culture
             if update.culture_id is not None:
-                data["culture_id"] = update.culture_id
+                changes["culture_id"] = update.culture_id
             if update.religion_id is not None:
-                data["religion_id"] = update.religion_id
+                changes["religion_id"] = update.religion_id
             if update.assimilation is not None:
-                data["assimilation"] = update.assimilation
+                changes["assimilation"] = update.assimilation
             if update.cultural_tension is not None:
-                data["cultural_tension"] = update.cultural_tension
+                changes["cultural_tension"] = update.cultural_tension
             if update.resource_depletion is not None:
-                data["resource_depletion"] = update.resource_depletion
+                changes["resource_depletion"] = update.resource_depletion
             if update.set_owner:
-                data["owner_id"] = update.owner_id
-            tiles[update.tile_id] = RegionData.model_validate(data)
+                changes["owner_id"] = update.owner_id
+            tile = tiles[update.tile_id]
+            if not _changes_valid(changes):
+                RegionData.model_validate({**tile.__dict__, **changes})
+            tiles[update.tile_id] = _copy_tile(tile, changes)
 
-        world_map = WorldMap(size=state.map.size, tiles=tuple(tiles))
-        return state.evolve(map=world_map)
+        world_map = WorldMap.model_construct(size=state.map.size, tiles=tuple(tiles))
+        return state.model_copy(update={"map": world_map})
 
     def _apply_faction_updates(
         self,
@@ -176,9 +183,59 @@ class SimulationEngine:
             if position is None:
                 raise ValueError(f"фракция #{update.faction_id} отсутствует в снимке")
             factions[position] = factions[position].evolve(**dict(update.changes))
-        return state.evolve(factions=tuple(factions))
+        return state.model_copy(update={"factions": tuple(factions)})
 
     def _add_event(self, event: Event) -> None:
         """Добавляет событие в летопись, выдавая уникальный идентификатор."""
         event_id = len(self._chronicle)
         self._chronicle.add(event.model_copy(update={"id": event_id}))
+
+
+def _copy_tile(tile: RegionData, changes: dict[str, object]) -> RegionData:
+    """Быстрая копия тайла с изменениями без повторной валидации.
+
+    Внутри шага поля уже проверены правилами; копирование через
+    ``__dict__`` экономит время на массовых обновлениях карты.
+    """
+    new = object.__new__(RegionData)
+    new.__dict__ = {**tile.__dict__, **changes}
+    fields_set: set[str] = set(getattr(tile, "__pydantic_fields_set__", set()))
+    object.__setattr__(new, "__pydantic_extra__", None)
+    object.__setattr__(
+        new,
+        "__pydantic_fields_set__",
+        fields_set | set(changes),
+    )
+    object.__setattr__(new, "__pydantic_private__", None)
+    return new
+
+
+def _changes_valid(changes: dict[str, object]) -> bool:
+    """Проверяет диапазоны изменяемых полей без полной валидации модели."""
+    for name, value in changes.items():
+        if name in {"population", "population_capacity", "army_presence"}:
+            if not isinstance(value, int) or value < 0:
+                return False
+        elif name in {
+            "fertility",
+            "happiness",
+            "unrest",
+            "fortification",
+            "urbanization",
+            "cultural_tension",
+        }:
+            if not isinstance(value, (int, float)) or not 0.0 <= value <= 100.0:
+                return False
+        elif name == "assimilation":
+            if not isinstance(value, (int, float)) or not 0.0 <= value <= 1.0:
+                return False
+        elif name == "resource_depletion":
+            if not isinstance(value, (int, float)) or value < 0.0:
+                return False
+        elif (
+            name in {"owner_id", "culture_id", "religion_id"}
+            and value is not None
+            and (not isinstance(value, int) or value < 0)
+        ):
+            return False
+    return True

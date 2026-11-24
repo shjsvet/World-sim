@@ -34,12 +34,16 @@ class ExpansionRule:
         updates: list[TileUpdate] = []
         events: list[Event] = []
         factions_by_id = {faction.id: faction for faction in state.factions}
+        owned: dict[int, set[int]] = {faction.id: set() for faction in state.factions}
+        for tile in state.map.tiles:
+            if tile.owner_id is not None and tile.owner_id in owned:
+                owned[tile.owner_id].add(tile.id)
 
         for faction in sorted(state.factions, key=lambda item: item.id):
             stats = ctx.stats.get(faction.id)
             starving = stats.is_starving if stats is not None else False
 
-            targets = self._candidates(state, faction)
+            targets = self._candidates(state, faction, owned[faction.id])
             weights: dict[int, float] = {}
             for tile in targets:
                 if tile.owner_id is not None:
@@ -100,9 +104,12 @@ class ExpansionRule:
         return RuleOutcome(tile_updates=tuple(updates), events=tuple(events))
 
     @staticmethod
-    def _candidates(state: WorldState, faction: Faction) -> list[RegionData]:
+    def _candidates(
+        state: WorldState,
+        faction: Faction,
+        owned: set[int],
+    ) -> list[RegionData]:
         """Возвращает соседние тайлы фракции, не принадлежащие ей."""
-        owned = {tile.id for tile in state.map.tiles if tile.owner_id == faction.id}
         candidates: dict[int, RegionData] = {}
         for tile_id in owned:
             tile = state.map.by_id(tile_id)
