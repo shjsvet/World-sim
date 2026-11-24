@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from worldsim.ai.ruler import RulerAction
+from worldsim.core.army import ArmyMarch, march_duration
 from worldsim.core.events import Event, EventType
 from worldsim.core.faction import Faction, MagicSchool
 from worldsim.core.geography import ResourceType
@@ -42,6 +43,8 @@ class AIRulerRule:
         next_academy_id = max((item.id for item in academies), default=-1) + 1
         orders = list(state.standing_orders)
         next_order_id = max((item.id for item in orders), default=-1) + 1
+        marches = list(state.army_marches)
+        next_march_id = max((item.id for item in marches), default=-1) + 1
         tile_updates: list[TileUpdate] = []
         events: list[Event] = []
 
@@ -92,6 +95,18 @@ class AIRulerRule:
                     next_order_id,
                     ctx.year,
                 )
+            elif action is RulerAction.MOVE_ARMY:
+                next_march_id = self._issue_march(
+                    state,
+                    faction,
+                    command,
+                    marches,
+                    tile_updates,
+                    events,
+                    working,
+                    next_march_id,
+                    ctx.year,
+                )
 
         return RuleOutcome(
             tile_updates=tuple(tile_updates),
@@ -99,6 +114,7 @@ class AIRulerRule:
             events=tuple(events),
             academies=tuple(academies),
             standing_orders=tuple(orders),
+            army_marches=tuple(marches),
         )
 
     @staticmethod
@@ -331,6 +347,78 @@ class AIRulerRule:
                 year=year,
                 type=EventType.CUSTOM,
                 summary=f"ИИ-правитель фракции {faction.id} издал приказ {kind}",
+                faction_ids=(faction.id,),
+                severity=0.4,
+            )
+        )
+        return next_id + 1
+
+    @staticmethod
+    def _issue_march(
+        state: WorldState,
+        faction: Faction,
+        command: AICommand,
+        marches: list[ArmyMarch],
+        tile_updates: list[TileUpdate],
+        events: list[Event],
+        working: dict[int, Faction],
+        next_id: int,
+        year: int,
+    ) -> int:
+        """Создаёт марш из гарнизона с наибольшим присутствием."""
+        target_id = command.decision.target_tile_id
+        if target_id is None or target_id >= len(state.map.tiles):
+            return next_id
+        target = state.map.by_id(target_id)
+        if not target.is_land or target.owner_id is None:
+            return next_id
+        owned = [
+            tile
+            for tile in state.map.tiles
+            if tile.owner_id == faction.id and tile.army_presence > 0
+        ]
+        if not owned:
+            return next_id
+        source = max(owned, key=lambda tile: (tile.army_presence, -tile.id))
+        if source.id == target_id:
+            return next_id
+        wanted = (
+            command.decision.amount
+            if command.decision.amount > 0
+            else min(10, source.army_presence)
+        )
+        amount = min(wanted, source.army_presence, max(0, int(faction.army_size)))
+        if amount <= 0:
+            return next_id
+        duration = march_duration(state, source.id, target_id)
+        marches.append(
+            ArmyMarch(
+                id=next_id,
+                faction_id=faction.id,
+                from_tile=source.id,
+                to_tile=target_id,
+                amount=amount,
+                departure_year=year,
+                arrival_year=year + duration,
+            )
+        )
+        tile_updates.append(
+            TileUpdate(
+                tile_id=source.id,
+                army_presence=source.army_presence - amount,
+            )
+        )
+        working[faction.id] = faction.evolve(army_size=max(0.0, faction.army_size - amount))
+        events.append(
+            Event(
+                id=0,
+                year=year,
+                type=EventType.CUSTOM,
+                summary=(
+                    f"Армия фракции {faction.id} ({amount}) выступила "
+                    f"из тайла {source.id} в {target_id} до {year + duration}"
+                ),
+                tile_ids=(source.id, target_id),
                 faction_ids=(faction.id,),
                 severity=0.4,
             )

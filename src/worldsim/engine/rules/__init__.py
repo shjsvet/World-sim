@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 from worldsim.ai.ruler import RulerDecision
+from worldsim.core.army import ArmyMarch
 from worldsim.core.culture import Religion
 from worldsim.core.diplomacy import War
 from worldsim.core.events import Event
@@ -129,6 +130,7 @@ class RuleOutcome:
     diplomatic_messages: tuple[DiplomaticMessage, ...] | None = None
     standing_orders: tuple[StandingOrder, ...] | None = None
     religions: tuple[Religion, ...] | None = None
+    army_marches: tuple[ArmyMarch, ...] | None = None
 
 
 class Rule(Protocol):

@@ -178,6 +178,8 @@ class SimulationEngine:
             state = state.model_copy(update={"standing_orders": outcome.standing_orders})
         if outcome.religions is not None:
             state = state.model_copy(update={"religions": outcome.religions})
+        if outcome.army_marches is not None:
+            state = state.model_copy(update={"army_marches": outcome.army_marches})
         if not outcome.tile_updates:
             return state
 

@@ -8,6 +8,7 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from worldsim.core.army import ArmyMarch
 from worldsim.core.culture import Culture, Religion
 from worldsim.core.diplomacy import War
 from worldsim.core.faction import Faction
@@ -63,6 +64,7 @@ class WorldState(BaseModel):
         religions: Религии мира.
         trade_routes: Действующие торговые маршруты.
         academies: Магические академии.
+        army_marches: Идущие марши армий.
         rulers: ИИ-правители фракций.
         thoughts: Дневники мыслей правителей.
         standing_orders: Долгосрочные приказы.
@@ -80,6 +82,7 @@ class WorldState(BaseModel):
     religions: tuple[Religion, ...] = ()
     trade_routes: tuple[TradeRoute, ...] = ()
     academies: tuple[MagicAcademy, ...] = ()
+    army_marches: tuple[ArmyMarch, ...] = ()
     rulers: tuple[RulerProfile, ...] = ()
     thoughts: tuple[RulerThought, ...] = ()
     standing_orders: tuple[StandingOrder, ...] = ()
@@ -178,6 +181,18 @@ class WorldState(BaseModel):
             if academy.tile_id in academy_tiles:
                 raise ValueError("на одном тайле может быть только одна академия")
             academy_tiles.add(academy.tile_id)
+
+        if len({march.id for march in self.army_marches}) != len(self.army_marches):
+            raise ValueError("идентификаторы маршей должны быть уникальны")
+        for march in self.army_marches:
+            if march.faction_id not in faction_ids:
+                raise ValueError("марш ссылается на несуществующую фракцию")
+            if march.from_tile >= len(self.map.tiles) or march.to_tile >= len(self.map.tiles):
+                raise ValueError("марш ссылается на тайл вне карты")
+            if not self.map.by_id(march.from_tile).is_land:
+                raise ValueError("марш не может начинаться на воде")
+            if not self.map.by_id(march.to_tile).is_land:
+                raise ValueError("марш не может идти на воду")
 
         if len({ruler.faction_id for ruler in self.rulers}) != len(self.rulers):
             raise ValueError("у фракции может быть только один ИИ-правитель")
