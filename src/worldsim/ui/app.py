@@ -34,6 +34,11 @@ from worldsim.ui.history import (
     diff_to_parent,
     run_alternative,
 )
+from worldsim.ui.thoughts import (
+    format_thought,
+    thoughts_by_faction,
+    thoughts_to_markdown,
+)
 from worldsim.vcs.repo import RepositoryError, WorldRepo
 
 _DEFAULT_RULES: list[Rule] = [
@@ -192,7 +197,9 @@ def main() -> None:
             hide_index=True,
         )
 
-    world_tab, history_tab, ai_tab = st.tabs(["🌍 Мир", "🕰 История", "✨ ИИ"])
+    world_tab, history_tab, ai_tab, thoughts_tab = st.tabs(
+        ["🌍 Мир", "🕰 История", "✨ ИИ", "🧠 Мысли"]
+    )
 
     with world_tab:
         _render_world(engine, layer)
@@ -200,6 +207,8 @@ def main() -> None:
         _render_history(engine, repo_dir)
     with ai_tab:
         _render_ai(engine)
+    with thoughts_tab:
+        _render_thoughts(engine)
 
 
 def _render_world(engine: SimulationEngine, layer: str) -> None:
@@ -701,6 +710,44 @@ def _render_history(engine: SimulationEngine, repo_dir: str) -> None:
         if st.button("Создать коммит"):
             commit_world(repo, engine.state, engine.chronicle, message)
             st.rerun()
+
+
+def _render_thoughts(engine: SimulationEngine) -> None:
+    """Вкладка «Мысли правителей»."""
+    st.subheader("Мысли правителей")
+    st.caption("Короткие дневники: почему ИИ-правитель выбрал именно это действие.")
+    state = engine.state
+    if not state.thoughts:
+        st.info(
+            "Записей пока нет. Они появляются после ходов ИИ-правителей, "
+            "когда фракции принимают решения."
+        )
+        return
+
+    names = {faction.id: faction.name for faction in state.factions}
+    grouped = thoughts_by_faction(state.thoughts, state.factions)
+    choice = st.selectbox(
+        "Фракция",
+        options=[None, *names],
+        format_func=lambda faction_id: "Все фракции" if faction_id is None else names[faction_id],
+    )
+    if choice is None:
+        entries = sorted(state.thoughts, key=lambda thought: (thought.year, thought.id))
+    else:
+        entries = list(grouped[choice])
+
+    if not entries:
+        st.info("У этой фракции пока нет записей.")
+        return
+
+    for thought in entries:
+        with st.container(border=True):
+            st.markdown(format_thought(thought, names[thought.faction_id]))
+    st.download_button(
+        "Скачать дневник .md",
+        data=thoughts_to_markdown(entries, state.factions),
+        file_name=f"thoughts_{state.year}.md",
+    )
 
 
 def _render_ai(engine: SimulationEngine) -> None:
