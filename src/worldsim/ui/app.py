@@ -15,11 +15,16 @@ from worldsim.core.state import WorldConfig, WorldState
 from worldsim.engine.engine import SimulationEngine
 from worldsim.engine.metrics import FactionStats, compute_faction_stats
 from worldsim.engine.rules import Rule
+from worldsim.engine.rules.ai_ruler import AIRulerRule
 from worldsim.engine.rules.army import ArmyMovementRule
 from worldsim.engine.rules.magic import AcademyRule, MagicResearchRule, ManaRule
+from worldsim.engine.rules.march import MarchRule
+from worldsim.engine.rules.orders import StandingOrderRule
 from worldsim.engine.rules.population import PopulationGrowthRule
 from worldsim.engine.rules.random_events import FamineRule, PlagueRule
+from worldsim.engine.rules.religion import ReligionFoundingRule
 from worldsim.engine.rules.social import HappinessRule, UnrestRule, UrbanizationRule
+from worldsim.engine.rules.trade_offers import TradeOfferRule
 from worldsim.generator.world import create_world
 from worldsim.ui.ai_panel import (
     create_ai_world,
@@ -27,6 +32,7 @@ from worldsim.ui.ai_panel import (
     safe_client,
     write_chapter_for_engine,
 )
+from worldsim.ui.ai_rulers import ensure_rulers, open_diplomacy, run_ai_year
 from worldsim.ui.chat import (
     filter_messages,
     format_message,
@@ -57,6 +63,11 @@ _DEFAULT_RULES: list[Rule] = [
     ManaRule(),
     AcademyRule(),
     MagicResearchRule(),
+    AIRulerRule(),
+    StandingOrderRule(),
+    TradeOfferRule(),
+    MarchRule(),
+    ReligionFoundingRule(),
 ]
 
 _LAYER_LABELS = {
@@ -93,7 +104,11 @@ _LAYER_HINTS = {
 
 def build_engine(state: WorldState) -> SimulationEngine:
     """Создаёт движок с правилами базовой симуляции."""
-    return SimulationEngine(_DEFAULT_RULES, Chronicle(), initial_state=state)
+    return SimulationEngine(
+        _DEFAULT_RULES,
+        Chronicle(),
+        initial_state=ensure_rulers(state),
+    )
 
 
 def main() -> None:
@@ -109,6 +124,9 @@ def main() -> None:
         f"Симулятор мира · версия {worldsim.__version__} · "
         "карта, фракции, летопись и альтернативные реальности"
     )
+    notice = st.session_state.pop("world_notice", None)
+    if notice:
+        st.success(str(notice))
 
     with st.sidebar:
         st.header("Параметры мира")
@@ -154,6 +172,7 @@ def main() -> None:
                 )
             )
             st.session_state.pop("chapter_text", None)
+            st.session_state["world_notice"] = "Мир создан."
             st.rerun()
 
         st.divider()
@@ -167,6 +186,16 @@ def main() -> None:
             "Каталог истории",
             value=".worldsim",
             help="Где хранить коммиты, ветки и теги.",
+        )
+        st.divider()
+        st.header("ИИ-правители")
+        use_llm = st.checkbox(
+            "Использовать LLM",
+            value=False,
+            help=(
+                "Выключено — детерминированный fallback без ключей. "
+                "Включено — решения через настроенного провайдера."
+            ),
         )
 
     engine: SimulationEngine | None = st.session_state.get("engine")
@@ -207,7 +236,7 @@ def main() -> None:
     )
 
     with world_tab:
-        _render_world(engine, layer)
+        _render_world(engine, layer, use_llm)
     with history_tab:
         _render_history(engine, repo_dir)
     with ai_tab:
@@ -215,13 +244,13 @@ def main() -> None:
     with thoughts_tab:
         _render_thoughts(engine)
     with chat_tab:
-        _render_chat(engine)
+        _render_chat(engine, use_llm)
 
 
-def _render_world(engine: SimulationEngine, layer: str) -> None:
+def _render_world(engine: SimulationEngine, layer: str, use_llm: bool) -> None:
     """Вкладка «Мир»: управление временем, карта, фракции и летопись."""
     state = engine.state
-    controls = st.columns([1, 1, 1, 2])
+    controls = st.columns([1, 1, 1, 1, 2])
     if controls[0].button("▶ Следующий год", width="stretch"):
         engine.step()
     if controls[1].button("⏩ +10 лет", width="stretch"):
@@ -230,8 +259,18 @@ def _render_world(engine: SimulationEngine, layer: str) -> None:
     if controls[2].button("⏭ +50 лет", width="stretch"):
         with st.spinner("Идёт 50 лет…"):
             engine.run(50)
-    controls[3].caption(
-        f"Год {state.year} · фракций {len(state.factions)} · событий {len(engine.chronicle)}"
+    if controls[3].button("🧠 ИИ-год", width="stretch"):
+        client = None
+        if use_llm:
+            client, error = safe_client()
+            if client is None:
+                st.warning(f"LLM недоступен: {error}. Работает fallback.")
+        with st.spinner("ИИ-правители принимают решения…"):
+            run_ai_year(engine, client)
+    state = engine.state
+    controls[4].caption(
+        f"Год {state.year} · фракций {len(state.factions)} · "
+        f"событий {len(engine.chronicle)} · мыслей {len(state.thoughts)}"
     )
 
     _render_metrics(engine)
@@ -719,33 +758,73 @@ def _render_history(engine: SimulationEngine, repo_dir: str) -> None:
             st.rerun()
 
 
-def _render_chat(engine: SimulationEngine) -> None:
+def _render_chat(engine: SimulationEngine, use_llm: bool) -> None:
     """Вкладка «Переписка правителей»."""
     st.subheader("Переписка правителей")
     st.caption("Прямая трансляция дипломатических сообщений между фракциями.")
     state = engine.state
+    names = {faction.id: faction.name for faction in state.factions}
+    with st.expander(
+        "Открыть канал переписки",
+        expanded=not state.diplomatic_messages,
+    ):
+        if len(names) < 2:
+            st.info("Для переписки нужны хотя бы две фракции.")
+        else:
+            chat_columns = st.columns(3)
+            sender = chat_columns[0].selectbox(
+                "От",
+                options=list(names),
+                format_func=lambda faction_id: names[faction_id],
+                key="chat_from",
+            )
+            recipient = chat_columns[1].selectbox(
+                "К",
+                options=list(names),
+                format_func=lambda faction_id: names[faction_id],
+                index=1,
+                key="chat_to",
+            )
+            topic = chat_columns[2].selectbox(
+                "Тема",
+                ["Мир", "Торговля", "Союз"],
+                key="chat_topic",
+            )
+            if st.button("Отправить предложение", key="send_chat"):
+                if sender == recipient:
+                    st.error("Выберите разные фракции.")
+                else:
+                    client = None
+                    if use_llm:
+                        client, error = safe_client()
+                        if client is None:
+                            st.warning(f"LLM недоступен: {error}. Работает fallback.")
+                    topic_key = {"Мир": "peace", "Торговля": "trade", "Союз": "offer"}[topic]
+                    open_diplomacy(engine, sender, recipient, topic_key, client)
+                    st.session_state["world_notice"] = "Сообщение отправлено."
+                    st.rerun()
+
     if not state.diplomatic_messages:
-        st.info(
-            "Сообщений пока нет. Они появляются, когда ИИ-правители открывают канал переговоров."
-        )
+        st.info("Сообщений пока нет. Откройте канал выше, чтобы увидеть переписку правителей.")
         return
 
-    names = {faction.id: faction.name for faction in state.factions}
     columns = st.columns(2)
-    sender = columns[0].selectbox(
-        "От",
+    filter_sender = columns[0].selectbox(
+        "Фильтр: от",
         options=[None, *names],
         format_func=lambda faction_id: "Любой" if faction_id is None else names[faction_id],
+        key="filter_from",
     )
-    recipient = columns[1].selectbox(
-        "К",
+    filter_recipient = columns[1].selectbox(
+        "Фильтр: к",
         options=[None, *names],
         format_func=lambda faction_id: "Любой" if faction_id is None else names[faction_id],
+        key="filter_to",
     )
     entries = filter_messages(
         state.diplomatic_messages,
-        sender_id=sender,
-        recipient_id=recipient,
+        sender_id=filter_sender,
+        recipient_id=filter_recipient,
     )
     if not entries:
         st.info("Под выбранные фильтры сообщений нет.")
@@ -826,18 +905,24 @@ def _render_ai(engine: SimulationEngine) -> None:
     if st.button("Создать мир по описанию", type="primary"):
         client, error = safe_client()
         if client is None:
-            st.warning(f"ИИ недоступен: {error}. Использую ручную конфигурацию.")
             st.session_state["engine"] = build_engine(create_world(fallback))
+            st.session_state["world_notice"] = (
+                f"ИИ недоступен: {error}. Мир создан по ручной конфигурации."
+            )
             st.rerun()
         else:
             with st.spinner("ИИ проектирует мир…"):
                 try:
                     world, _blueprint, path = create_ai_world(description, client)
-                except AIUnavailableError as exc:
-                    st.error(f"Не удалось создать мир: {exc}")
+                except Exception as exc:
+                    st.session_state["engine"] = build_engine(create_world(fallback))
+                    st.session_state["world_notice"] = (
+                        f"ИИ не смог создать мир: {exc}. Создан мир по ручной конфигурации."
+                    )
+                    st.rerun()
                 else:
                     st.session_state["engine"] = build_engine(world)
-                    st.success(f"Мир создан, черновик сохранён: {path}")
+                    st.session_state["world_notice"] = f"Мир создан по описанию, черновик: {path}"
                     st.rerun()
 
     st.divider()
