@@ -12,6 +12,7 @@ from worldsim.core.events import Event
 from worldsim.core.magic import MagicAcademy
 from worldsim.core.resources import TradeRoute
 from worldsim.core.rng import Rng
+from worldsim.core.rulers import DiplomaticMessage
 from worldsim.core.state import WorldConfig, WorldState
 
 if TYPE_CHECKING:
@@ -124,6 +125,7 @@ class RuleOutcome:
     wars: tuple[War, ...] | None = None
     trade_routes: tuple[TradeRoute, ...] | None = None
     academies: tuple[MagicAcademy, ...] | None = None
+    diplomatic_messages: tuple[DiplomaticMessage, ...] | None = None
 
 
 class Rule(Protocol):
