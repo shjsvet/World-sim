@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol
 
 from worldsim.ai.ruler import RulerDecision
+from worldsim.core.culture import Religion
 from worldsim.core.diplomacy import War
 from worldsim.core.events import Event
 from worldsim.core.magic import MagicAcademy
@@ -127,6 +128,7 @@ class RuleOutcome:
     academies: tuple[MagicAcademy, ...] | None = None
     diplomatic_messages: tuple[DiplomaticMessage, ...] | None = None
     standing_orders: tuple[StandingOrder, ...] | None = None
+    religions: tuple[Religion, ...] | None = None
 
 
 class Rule(Protocol):
