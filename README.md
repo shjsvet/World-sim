@@ -223,6 +223,8 @@ scripts/            # CLI симуляции и проверка докумен�
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — слои, поток данных,
   инварианты, формат `.worldsim/` и таблица правил.
+- [docs/WORLD_PARAMETERS.md](docs/WORLD_PARAMETERS.md) — все параметры мира,
+  их влияние и вклад в баланс сил.
 - [docs/PERFORMANCE.md](docs/PERFORMANCE.md) — замеры шага 256×256,
   оптимизации и причины недостижения цели 50 мс.
 - [docs/adr/](docs/adr/) — архитектурные решения:
