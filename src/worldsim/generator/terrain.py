@@ -45,6 +45,48 @@ _RESOURCE_WEIGHTS: dict[Biome, dict[ResourceType, float]] = {
 _DIRECTIONS: tuple[tuple[int, int], ...] = ((-1, 0), (1, 0), (0, -1), (0, 1))
 
 
+_HAPPINESS_BIOME_BONUS: dict[Biome, float] = {
+    Biome.PLAINS: 6.0,
+    Biome.FOREST: 3.0,
+    Biome.HILLS: 0.0,
+    Biome.COAST: 4.0,
+    Biome.MOUNTAINS: -8.0,
+    Biome.DESERT: -16.0,
+    Biome.TUNDRA: -12.0,
+    Biome.SWAMP: -9.0,
+}
+
+
+def _initial_happiness(
+    biome: Biome,
+    fertility: float,
+    urbanization: float,
+    x: int,
+    y: int,
+) -> float:
+    """Задаёт стартовое счастье с разнообразием по карте."""
+    if biome.is_water:
+        return 0.0
+    noise = ((x * 17 + y * 31) % 13) - 6
+    value = (
+        60.0
+        + _HAPPINESS_BIOME_BONUS.get(biome, 0.0)
+        + (fertility - 50.0) * 0.25
+        - urbanization * 0.08
+        + noise
+    )
+    return max(0.0, min(100.0, value))
+
+
+def _initial_unrest(happiness: float, population: int, x: int, y: int) -> float:
+    """Задаёт стартовое недовольство только для населённых тайлов."""
+    if population <= 0:
+        return 0.0
+    noise = ((x * 7 + y * 11) % 9) - 4
+    value = 25.0 - (happiness - 60.0) * 0.4 + noise
+    return max(0.0, min(100.0, value))
+
+
 def generate_map(config: WorldConfig, rng: Rng) -> WorldMap:
     """Генерирует карту мира по конфигурации.
 
@@ -72,6 +114,27 @@ def generate_map(config: WorldConfig, rng: Rng) -> WorldMap:
     mana_densities, mana_regenerations, ley_lines = _mana(biomes, size, rng)
     capacities, populations = _population(biomes, fertilities, rng)
 
+    urbanizations = [min(100.0, value / 20.0) for value in populations]
+    happiness_values = [
+        _initial_happiness(
+            biomes[index],
+            fertilities[index],
+            urbanizations[index],
+            index % size,
+            index // size,
+        )
+        for index in range(total)
+    ]
+    unrest_values = [
+        _initial_unrest(
+            happiness_values[index],
+            populations[index],
+            index % size,
+            index // size,
+        )
+        for index in range(total)
+    ]
+
     tiles = tuple(
         RegionData(
             id=index,
@@ -86,8 +149,9 @@ def generate_map(config: WorldConfig, rng: Rng) -> WorldMap:
             resource_depletion=resource_depletions[index],
             population=populations[index],
             population_capacity=capacities[index],
-            happiness=60.0,
-            urbanization=min(100.0, populations[index] / 20.0),
+            happiness=happiness_values[index],
+            unrest=unrest_values[index],
+            urbanization=urbanizations[index],
             mana_density=mana_densities[index],
             mana_regeneration=mana_regenerations[index],
             ley_line=index in ley_lines,

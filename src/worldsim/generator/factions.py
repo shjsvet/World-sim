@@ -163,6 +163,16 @@ def assign_territories(world_map: WorldMap, factions: tuple[Faction, ...]) -> Wo
             queue.append((neighbor, faction_id))
 
     tiles: list[RegionData] = []
+    army_by_tile: dict[int, int] = {}
+    for faction in factions:
+        owned = sorted(tile_id for tile_id, owner in owners.items() if owner == faction.id)
+        if not owned:
+            continue
+        total = max(0, int(faction.army_size))
+        base, remainder = divmod(total, len(owned))
+        for position, tile_id in enumerate(owned):
+            army_by_tile[tile_id] = base + (1 if position < remainder else 0)
+
     for tile in world_map.tiles:
         if tile.id in owners:
             tiles.append(
@@ -170,12 +180,39 @@ def assign_territories(world_map: WorldMap, factions: tuple[Faction, ...]) -> Wo
                     update={
                         "owner_id": owners[tile.id],
                         "culture": cultures[tile.id],
+                        "army_presence": army_by_tile.get(tile.id, 0),
                     }
                 )
             )
         else:
             tiles.append(tile)
     return WorldMap(size=world_map.size, tiles=tuple(tiles))
+
+
+def distribute_territory_army(
+    world_map: WorldMap,
+    factions: tuple[Faction, ...],
+) -> WorldMap:
+    """Раскладывает армию фракций по принадлежащим им тайлам."""
+    army_by_tile: dict[int, int] = {}
+    for faction in factions:
+        owned = sorted(tile.id for tile in world_map.tiles if tile.owner_id == faction.id)
+        if not owned:
+            continue
+        total = max(0, int(faction.army_size))
+        base, remainder = divmod(total, len(owned))
+        for position, tile_id in enumerate(owned):
+            army_by_tile[tile_id] = base + (1 if position < remainder else 0)
+
+    return WorldMap(
+        size=world_map.size,
+        tiles=tuple(
+            tile.model_copy(update={"army_presence": army_by_tile.get(tile.id, 0)})
+            if tile.owner_id is not None
+            else tile
+            for tile in world_map.tiles
+        ),
+    )
 
 
 def _pick_capitals(world_map: WorldMap, count: int, rng: Rng) -> list[RegionData]:

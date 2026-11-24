@@ -15,9 +15,11 @@ from worldsim.core.state import WorldConfig, WorldState
 from worldsim.engine.engine import SimulationEngine
 from worldsim.engine.metrics import FactionStats, compute_faction_stats
 from worldsim.engine.rules import Rule
+from worldsim.engine.rules.army import ArmyMovementRule
 from worldsim.engine.rules.magic import AcademyRule, MagicResearchRule, ManaRule
 from worldsim.engine.rules.population import PopulationGrowthRule
 from worldsim.engine.rules.random_events import FamineRule, PlagueRule
+from worldsim.engine.rules.social import HappinessRule, UnrestRule, UrbanizationRule
 from worldsim.generator.world import create_world
 from worldsim.ui.ai_panel import (
     create_ai_world,
@@ -38,6 +40,10 @@ _DEFAULT_RULES: list[Rule] = [
     PlagueRule(),
     FamineRule(),
     PopulationGrowthRule(),
+    ArmyMovementRule(),
+    HappinessRule(),
+    UnrestRule(),
+    UrbanizationRule(),
     ManaRule(),
     AcademyRule(),
     MagicResearchRule(),
@@ -59,9 +65,18 @@ _LAYER_HINTS = {
     "political": "Цвет фракции-владельца; серый — нейтральная территория.",
     "culture": "Культура населения; серый — культура не задана.",
     "resources": "Главный ресурс тайла: еда, дерево, железо, золото, мана.",
-    "happiness": "Красный — низкое счастье, зелёный — высокое.",
-    "unrest": "Светлый — спокойно, тёмно-красный — высокое недовольство.",
-    "army": "Интенсивность показывает численность гарнизона.",
+    "happiness": (
+        "Только населённые тайлы: красный — низкое счастье, "
+        "зелёный — высокое; шкала растянута по текущему миру."
+    ),
+    "unrest": (
+        "Только населённые тайлы: светлый — спокойно, тёмно-красный — "
+        "высокое недовольство; шкала растянута по текущему миру."
+    ),
+    "army": (
+        "Только тайлы с гарнизоном: чем темнее, тем больше солдат "
+        "относительно максимального гарнизона в мире."
+    ),
     "mana": "Плотность маны; голубой — лей-линия.",
 }
 

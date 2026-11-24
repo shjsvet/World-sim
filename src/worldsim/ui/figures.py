@@ -97,14 +97,68 @@ def tile_layer_figure(state: WorldState, layer: str) -> go.Figure:
     if layer not in LAYERS:
         raise ValueError(f"неизвестный слой карты: {layer!r}")
     tiles = state.map.tiles
-    factions = {faction.id: faction for faction in state.factions}
-    colors = [_layer_color(tile, layer, factions) for tile in tiles]
+    colors = _layer_colors(state, layer)
     return _scatter_figure(
         state,
         colors=colors,
         texts=[_tile_hover(state, tile) for tile in tiles],
         title=f"Слой «{layer}», год {state.year}",
     )
+
+
+def _layer_colors(state: WorldState, layer: str) -> list[str]:
+    """Считает цвета всех тайлов для выбранного слоя."""
+    tiles = state.map.tiles
+    factions = {faction.id: faction for faction in state.factions}
+    if layer == "happiness":
+        populated = [tile for tile in tiles if tile.is_land and tile.population > 0]
+        if not populated:
+            return [NEUTRAL_COLOR for _ in tiles]
+        low = min(tile.happiness for tile in populated)
+        high = max(tile.happiness for tile in populated)
+        colors: list[str] = []
+        for tile in tiles:
+            if not tile.is_land or tile.population <= 0:
+                colors.append(NEUTRAL_COLOR)
+            else:
+                ratio = _normalize(tile.happiness, low, high)
+                colors.append(_lerp_color("#c62828", "#2e7d32", ratio))
+        return colors
+    if layer == "unrest":
+        populated = [tile for tile in tiles if tile.is_land and tile.population > 0]
+        if not populated:
+            return [NEUTRAL_COLOR for _ in tiles]
+        low = min(tile.unrest for tile in populated)
+        high = max(tile.unrest for tile in populated)
+        colors = []
+        for tile in tiles:
+            if not tile.is_land or tile.population <= 0:
+                colors.append(NEUTRAL_COLOR)
+            else:
+                ratio = _normalize(tile.unrest, low, high)
+                colors.append(_lerp_color("#e0e0e0", "#b71c1c", ratio))
+        return colors
+    if layer == "army":
+        present = [tile.army_presence for tile in tiles if tile.army_presence > 0]
+        if not present:
+            return [NEUTRAL_COLOR for _ in tiles]
+        high = max(present)
+        colors = []
+        for tile in tiles:
+            if tile.army_presence <= 0:
+                colors.append(NEUTRAL_COLOR)
+            else:
+                ratio = _normalize(tile.army_presence, 0.0, float(high))
+                colors.append(_lerp_color("#ffe0b2", "#bf360c", ratio))
+        return colors
+    return [_layer_color(tile, layer, factions) for tile in tiles]
+
+
+def _normalize(value: float, low: float, high: float) -> float:
+    """Нормализует значение в диапазон 0–1; при равных значениях — 0.5."""
+    if high - low < 1e-9:
+        return 0.5
+    return max(0.0, min(1.0, (value - low) / (high - low)))
 
 
 def timeline_figure(commits: Sequence[Commit]) -> go.Figure:
@@ -227,12 +281,6 @@ def _layer_color(tile: RegionData, layer: str, factions: dict[int, Faction]) -> 
         return _culture_color(tile)
     if layer == "resources":
         return _RESOURCE_COLORS[tile.resource_type]
-    if layer == "happiness":
-        return _lerp_color("#d32f2f", "#2e7d32", tile.happiness / 100.0)
-    if layer == "unrest":
-        return _lerp_color("#e0e0e0", "#b71c1c", tile.unrest / 100.0)
-    if layer == "army":
-        return _lerp_color("#ffe0b2", "#bf360c", min(1.0, tile.army_presence / 20.0))
     if tile.ley_line:
         return "#00e5ff"
     return _lerp_color("#e3f2fd", "#4a148c", tile.mana_density / 100.0)
