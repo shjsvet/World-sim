@@ -298,7 +298,7 @@ def _tile_hover(state: WorldState, tile: RegionData) -> str:
         owner = faction.name
         culture = faction.culture
     return (
-        f"владелец: {owner}; культура: {culture}; "
+        f"({tile.x}, {tile.y}) · владелец: {owner}; культура: {culture}; "
         f"население: {tile.population}; биом: {tile.biome.value}"
     )
 

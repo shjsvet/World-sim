@@ -62,6 +62,7 @@ def test_hover_is_short_and_has_owner_fields() -> None:
     assert "культура" in text
     assert "население" in text
     assert "биом" in text
+    assert "(0, 0)" in text
     assert "плодородие" not in text
     assert "фортификация" not in text
 
