@@ -81,6 +81,18 @@ class BattleRequest:
 
 
 @dataclass(frozen=True)
+class MagicBoost:
+    """Результат боевой магии для одной заявки на бой."""
+
+    attacker_id: int
+    defender_id: int
+    tile_id: int
+    mana_spent: int
+    magic_bonus: float
+    school_modifier: float
+
+
+@dataclass(frozen=True)
 class StepContext:
     """Контекст одного шага симуляции, доступный правилам."""
 
@@ -89,6 +101,7 @@ class StepContext:
     rng: Rng
     stats: Mapping[int, FactionStats] = field(default_factory=dict)
     pending_battles: list[BattleRequest] = field(default_factory=list)
+    magic_boosts: list[MagicBoost] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

@@ -14,6 +14,7 @@ from worldsim.core.state import WorldConfig, WorldState
 from worldsim.engine.engine import SimulationEngine
 from worldsim.engine.metrics import compute_faction_stats
 from worldsim.engine.rules import Rule
+from worldsim.engine.rules.magic import AcademyRule, MagicResearchRule, ManaRule
 from worldsim.engine.rules.population import PopulationGrowthRule
 from worldsim.engine.rules.random_events import FamineRule, PlagueRule
 from worldsim.generator.world import create_world
@@ -32,7 +33,14 @@ from worldsim.ui.history import (
 )
 from worldsim.vcs.repo import RepositoryError, WorldRepo
 
-_DEFAULT_RULES: list[Rule] = [PlagueRule(), FamineRule(), PopulationGrowthRule()]
+_DEFAULT_RULES: list[Rule] = [
+    PlagueRule(),
+    FamineRule(),
+    PopulationGrowthRule(),
+    ManaRule(),
+    AcademyRule(),
+    MagicResearchRule(),
+]
 
 
 def build_engine(state: WorldState) -> SimulationEngine:
@@ -218,6 +226,8 @@ def _render_factions(state: WorldState) -> None:
             "Технологии": round(faction.tech_level, 2),
             "Армия": round(faction.army_size, 1),
             "Мощь": round(stats[faction.id].military_power, 1),
+            "Магия": round(faction.magic_power(), 2),
+            "Мана": faction.mana_pool,
             "Мораль": round(faction.morale, 2),
         }
         for faction in state.factions

@@ -35,6 +35,10 @@ class WarResolutionRule:
         """
         factions = {faction.id: faction for faction in state.factions}
         working = dict(factions)
+        boosts = {
+            (boost.attacker_id, boost.defender_id, boost.tile_id): boost
+            for boost in ctx.magic_boosts
+        }
         wars: dict[int, War] = {war.id: war for war in state.wars}
         next_war_id = max(wars, default=-1) + 1
         attacks: dict[int, int] = {}
@@ -56,9 +60,13 @@ class WarResolutionRule:
                 continue
             attacks[attacker.id] = attacks.get(attacker.id, 0) + 1
 
+            boost = boosts.get((attacker.id, defender.id, tile.id))
+            magic_factor = 1.0 + 0.2 * attacker.magic_power()
+            if boost is not None:
+                magic_factor += boost.magic_bonus + boost.school_modifier
             attack_roll = (
                 attacker.military_power
-                * (1.0 + 0.2 * attacker.magic_power())
+                * magic_factor
                 * ctx.rng.uniform(0.8, 1.2)
                 * culture_conflict_factor(attacker, defender)
             )
@@ -153,14 +161,22 @@ class WarResolutionRule:
                     started_year=ctx.year,
                 )
                 next_war_id += 1
-                events.append(
-                    Event.war(
-                        year=ctx.year,
-                        attacker_id=attacker.id,
-                        defender_id=defender.id,
-                        tile_id=tile.id,
-                    )
+                war_event = Event.war(
+                    year=ctx.year,
+                    attacker_id=attacker.id,
+                    defender_id=defender.id,
+                    tile_id=tile.id,
                 )
+                if boost is not None and boost.mana_spent > 0:
+                    war_event = war_event.model_copy(
+                        update={
+                            "payload": {
+                                **war_event.payload,
+                                "mana_spent": boost.mana_spent,
+                            }
+                        }
+                    )
+                events.append(war_event)
             attacker_losses = attacker_loss if war.attacker_id == attacker.id else defender_loss
             defender_losses = defender_loss if war.attacker_id == attacker.id else attacker_loss
             wars[war.id] = war.model_copy(

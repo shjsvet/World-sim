@@ -109,6 +109,7 @@ flowchart LR
 | 16 | `UrbanizationRule` | `engine/rules/social.py` |
 | 17 | `AssimilationRule` | `engine/rules/culture.py` |
 | 18 | `CultureClashRule` | `engine/rules/culture.py` |
+| 18 | `MagicCombatRule` | `engine/rules/battle_magic.py` |
 | 19 | `ConversionRule` | `engine/rules/culture.py` |
 | 20 | `PlagueRule` | `engine/rules/random_events.py` |
 | 20 | `WarResolutionRule` | `engine/rules/war.py` |
