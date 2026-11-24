@@ -14,6 +14,12 @@ from worldsim.core.faction import Faction
 from worldsim.core.geography import WorldMap
 from worldsim.core.magic import ACADEMY_MIN_DENSITY, MagicAcademy
 from worldsim.core.resources import TradeRoute
+from worldsim.core.rulers import (
+    DiplomaticMessage,
+    RulerProfile,
+    RulerThought,
+    StandingOrder,
+)
 
 
 class WorldConfig(BaseModel):
@@ -57,6 +63,10 @@ class WorldState(BaseModel):
         religions: Религии мира.
         trade_routes: Действующие торговые маршруты.
         academies: Магические академии.
+        rulers: ИИ-правители фракций.
+        thoughts: Дневники мыслей правителей.
+        standing_orders: Долгосрочные приказы.
+        diplomatic_messages: Переписка правителей.
     """
 
     model_config = ConfigDict(frozen=True)
@@ -70,6 +80,10 @@ class WorldState(BaseModel):
     religions: tuple[Religion, ...] = ()
     trade_routes: tuple[TradeRoute, ...] = ()
     academies: tuple[MagicAcademy, ...] = ()
+    rulers: tuple[RulerProfile, ...] = ()
+    thoughts: tuple[RulerThought, ...] = ()
+    standing_orders: tuple[StandingOrder, ...] = ()
+    diplomatic_messages: tuple[DiplomaticMessage, ...] = ()
 
     @model_validator(mode="after")
     def _validate_factions(self) -> Self:
@@ -164,6 +178,40 @@ class WorldState(BaseModel):
             if academy.tile_id in academy_tiles:
                 raise ValueError("на одном тайле может быть только одна академия")
             academy_tiles.add(academy.tile_id)
+
+        if len({ruler.faction_id for ruler in self.rulers}) != len(self.rulers):
+            raise ValueError("у фракции может быть только один ИИ-правитель")
+        for ruler in self.rulers:
+            if ruler.faction_id not in faction_ids:
+                raise ValueError("правитель ссылается на несуществующую фракцию")
+
+        if len({thought.id for thought in self.thoughts}) != len(self.thoughts):
+            raise ValueError("идентификаторы мыслей должны быть уникальны")
+        for thought in self.thoughts:
+            if thought.faction_id not in faction_ids:
+                raise ValueError("мысль ссылается на несуществующую фракцию")
+            if thought.target_tile_id is not None and (
+                thought.target_tile_id >= len(self.map.tiles)
+            ):
+                raise ValueError("мысль ссылается на тайл вне карты")
+
+        if len({order.id for order in self.standing_orders}) != len(self.standing_orders):
+            raise ValueError("идентификаторы приказов должны быть уникальны")
+        for order in self.standing_orders:
+            if order.faction_id not in faction_ids:
+                raise ValueError("приказ ссылается на несуществующую фракцию")
+            if order.target_tile_id is not None and (order.target_tile_id >= len(self.map.tiles)):
+                raise ValueError("приказ ссылается на тайл вне карты")
+
+        if len({message.id for message in self.diplomatic_messages}) != len(
+            self.diplomatic_messages
+        ):
+            raise ValueError("идентификаторы сообщений должны быть уникальны")
+        for message in self.diplomatic_messages:
+            if message.sender_id not in faction_ids:
+                raise ValueError("сообщение ссылается на несуществующего отправителя")
+            if message.recipient_id not in faction_ids:
+                raise ValueError("сообщение ссылается на несуществующего получателя")
         return self
 
     def evolve(self, **changes: object) -> WorldState:
